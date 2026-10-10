@@ -20,6 +20,17 @@ cargo run --locked
 
 Drag a window edge or corner to resize it, then use the native close button to exit.
 
+## Image assets
+
+Image files are stored with [Git LFS](https://git-lfs.com/). The rules in `.gitattributes` cover raster and vector images, GPU texture formats, and image editor files, including uppercase and mixed-case extensions. Add a tracking rule there when introducing a new image format.
+
+Install Git LFS on each development machine, then run from the repository root:
+
+```sh
+git lfs install --local
+git lfs pull
+```
+
 ## Checks
 
 ```sh
