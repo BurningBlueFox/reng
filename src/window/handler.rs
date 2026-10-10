@@ -1,10 +1,13 @@
 use std::error::Error;
 
 use winit::application::ApplicationHandler;
+#[cfg(not(target_arch = "wasm32"))]
 use winit::dpi::LogicalSize;
 use winit::error::OsError;
 use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+#[cfg(target_arch = "wasm32")]
+use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys};
 use winit::window::{Window, WindowId};
 
 use super::WindowSpecs;
@@ -31,19 +34,26 @@ impl WindowHandler {
         }
     }
 
-    pub fn run(mut self) -> Result<(), Box<dyn Error>> {
+    pub fn run(self) -> Result<(), Box<dyn Error>> {
         let event_loop = tracing::info_span!("initialize_event_loop")
             .in_scope(EventLoop::new)
             .inspect_err(|error| tracing::error!(%error, "Event loop creation failed"))?;
         event_loop.set_control_flow(ControlFlow::Wait);
         tracing::info!("Event loop starting");
-        event_loop
-            .run_app(&mut self)
-            .inspect_err(|error| tracing::error!(%error, "Event loop failed"))?;
-        tracing::info!("Event loop stopped");
+        #[cfg(target_arch = "wasm32")]
+        event_loop.spawn_app(self);
 
-        if let Some(error) = self.startup_error {
-            return Err(error.into());
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let mut app = self;
+            event_loop
+                .run_app(&mut app)
+                .inspect_err(|error| tracing::error!(%error, "Event loop failed"))?;
+            tracing::info!("Event loop stopped");
+
+            if let Some(error) = app.startup_error {
+                return Err(error.into());
+            }
         }
 
         Ok(())
@@ -66,8 +76,12 @@ impl ApplicationHandler for WindowHandler {
         .entered();
         let attributes = Window::default_attributes()
             .with_title(self.specs.title.as_str())
-            .with_inner_size(LogicalSize::new(self.specs.width, self.specs.height))
             .with_resizable(self.specs.resizable);
+        #[cfg(not(target_arch = "wasm32"))]
+        let attributes =
+            attributes.with_inner_size(LogicalSize::new(self.specs.width, self.specs.height));
+        #[cfg(target_arch = "wasm32")]
+        let attributes = attributes.with_append(true);
 
         match event_loop.create_window(attributes) {
             Ok(window) => {
