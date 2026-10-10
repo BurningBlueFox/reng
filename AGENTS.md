@@ -85,6 +85,8 @@ For dependency changes, run `cargo deny --locked check` and `npm audit`; install
 
 ## Verification and documentation
 
+- CI currently checks the web target on Linux, plus dependency audits. macOS and Windows CI builds are deferred to limit costs; run native checks locally for native changes.
+
 - Add focused behavioral tests for nontrivial logic changes. Documentation-only changes need a diff and link review, not new tests.
 - Smoke-test rendering changes on an actual GPU, including resizing and closing the window. For web changes, also run the demo in a browser.
 - State which platforms and browsers were tested. A successful macOS build does not establish Windows or browser runtime support.

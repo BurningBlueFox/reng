@@ -10,21 +10,6 @@ permissions:
   contents: read
 
 jobs:
-  native:
-    name: Native (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - run: rustup show
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-targets --locked -- -D warnings
-      - run: cargo test --locked
-      - run: cargo build --locked
-
   web:
     name: Web (Chromium)
     runs-on: ubuntu-latest
@@ -35,6 +20,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: rustup show
+      - run: cargo fmt --all -- --check
       - run: cargo clippy --lib --locked --target wasm32-unknown-unknown -- -D warnings
       - run: cargo install wasm-bindgen-cli --version 0.2.129 --locked
       - run: npm ci
