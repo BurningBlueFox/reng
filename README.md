@@ -88,6 +88,20 @@ cargo check --locked --target wasm32-unknown-unknown
 
 This checks compilation only. Browser startup and canvas integration are not implemented.
 
+## Potential nightly uses
+
+Stable Rust remains the default. These are future options to adopt only when a concrete need justifies them; none is required by the current engine.
+
+| Option | When to consider it | Adoption checks and limits |
+| --- | --- | --- |
+| [Portable `std::simd`](https://doc.rust-lang.org/nightly/std/simd/index.html) (`portable_simd`) | Profiling shows a CPU bottleneck in animation, physics, or bulk data processing. | Benchmark against the stable implementation on the intended targets before adopting it. SIMD can compile to scalar operations; a performance gain is not guaranteed. |
+| [Miri](https://github.com/rust-lang/miri) and [sanitizers](https://doc.rust-lang.org/unstable-book/compiler-flags/sanitizer.html) | Optional diagnostic checks for focused tests around unsafe memory handling or concurrency. | Miri interprets tested executions and has limited platform API/FFI support. Sanitizer support and instrumentation requirements vary by target. Neither replaces GPU, native-window, or browser runtime checks. |
+| [Declarative macros 2.0](https://doc.rust-lang.org/nightly/unstable-book/language-features/decl-macro.html) (`decl_macro`) | A concrete macro hygiene or organization problem justifies an experiment beyond stable `macro_rules!`. | Keep experiments isolated and compare them with the stable solution before making engine code depend on this unstable language feature. |
+
+Nightly diagnostics can coexist with stable builds: select nightly explicitly for those checks (for example, `cargo +nightly miri test` with Miri installed), while keeping the normal stable checks above. See [Rust's release channels](https://doc.rust-lang.org/book/appendix-07-nightly-rust.html).
+
+If engine code later requires unstable features, pin a dated toolchain such as `nightly-YYYY-MM-DD` and verify macOS and Windows builds and runtime behavior, plus `wasm32-unknown-unknown` compilation and browser execution when web packaging exists. Review compatibility before updating that pin.
+
 ## macOS proof of concept
 
 The window was opened, resized with the native zoom/restore control, and closed successfully on macOS. Windows and WebAssembly compilation checks also pass; Windows runtime and browser startup have not been tested.
