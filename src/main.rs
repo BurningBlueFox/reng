@@ -1,9 +1,9 @@
-mod telemetry;
-mod window;
-
 use std::error::Error;
 
-use window::{WindowHandler, WindowSpecs};
+use reng::{
+    telemetry,
+    window::{WindowHandler, WindowSpecs},
+};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let _trace_guard = telemetry::init()?;

@@ -8,7 +8,30 @@ A game engine written in Rust, intended for macOS, Windows, and web through WebA
 
 Window management uses [winit](https://docs.rs/winit/0.30.13/winit/). Rendering with [wgpu](https://wgpu.rs/) and browser packaging are planned.
 
-`main.rs` starts `WindowHandler` with `WindowSpecs::default()`. The specs hold the title, logical width and height, and resizable flag. All `winit` integration and window lifecycle logic live in `src/window.rs`.
+`main.rs` starts `WindowHandler` with `WindowSpecs::default()`. The specs hold the title, logical width and height, and resizable flag. `WindowSpecs` lives in `src/window/specs.rs`; `winit` integration and window lifecycle logic live in `src/window/handler.rs`.
+
+## Code layout
+
+One Cargo package contains a reusable engine library and a thin executable:
+
+```text
+src/
+├── main.rs
+├── lib.rs
+├── window/
+│   ├── mod.rs
+│   ├── specs.rs
+│   └── handler.rs
+└── telemetry/
+    ├── mod.rs
+    ├── native.rs
+    ├── web.rs
+    └── tests.rs
+```
+
+`lib.rs` exports the `window` and `telemetry` modules. Each subsystem's `mod.rs` keeps implementation modules private and exports its public entry points. `main.rs` explicitly initializes telemetry, keeps the trace guard alive through shutdown, and runs the window. Telemetry selects native or browser output at compile time; window code only emits logs and spans.
+
+Tests always live in dedicated files, with unit tests declared from a module using `mod tests;` under the appropriate `cfg` and integration tests under `tests/`. Test bodies, helpers, and fixtures never share production implementation files.
 
 ## Run
 
@@ -70,3 +93,36 @@ This checks compilation only. Browser startup and canvas integration are not imp
 The window was opened, resized with the native zoom/restore control, and closed successfully on macOS. Windows and WebAssembly compilation checks also pass; Windows runtime and browser startup have not been tested.
 
 ![Resizable reng window on macOS](docs/screenshots/resizable-window-macos.jpg)
+
+See [AGENTS.md](AGENTS.md) for project conventions and validation commands.
+
+## Agent tooling
+
+This repository enables the official [Ponytail](https://ponytail.dev/) plugin for Codex through [.codex/config.toml](.codex/config.toml). Project guidance uses `full` mode by default.
+
+For a new machine, install the plugin with the Codex CLI:
+
+```sh
+codex plugin marketplace add DietrichGebert/ponytail
+codex plugin add ponytail@ponytail
+```
+
+The hooks require Node.js on `PATH`. Run `codex`, review and trust the plugin's hooks in `/hooks`, and start a new chat. Restart the Codex desktop app after a new installation.
+
+Use `/ponytail lite`, `/ponytail full`, `/ponytail ultra`, or `/ponytail off` to change the mode. See the [official installation instructions](https://github.com/DietrichGebert/ponytail/blob/main/INSTALL.md).
+
+### Shared MCP servers
+
+[.codex/config.toml](.codex/config.toml) also configures two project-scoped MCP servers:
+
+- [Playwright MCP](https://github.com/microsoft/playwright-mcp), version `0.0.83`, for browser inspection, screenshots, and coordinate-based canvas interaction. It opens a visible, isolated Chrome session and saves automatically named output under the ignored `target/playwright-mcp/` directory.
+- [rust-analyzer MCP](https://github.com/zeenix/rust-analyzer-mcp), version `0.4.0`, for Rust definitions, references, types, and diagnostics.
+
+Install Node.js 18 or newer and Google Chrome. Ensure `npx` is on `PATH`; Playwright MCP downloads automatically on first use. Install the Rust prerequisites:
+
+```sh
+rustup component add rust-analyzer
+cargo install rust-analyzer-mcp --version 0.4.0 --locked
+```
+
+Ensure `rust-analyzer` and `rust-analyzer-mcp` are on `PATH`. Open this repository as a trusted Codex project, then restart Codex or start a new chat to load the servers. Use `/mcp` to check their connection status; `codex mcp list` from the repository root shows the configured servers. See [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp).
