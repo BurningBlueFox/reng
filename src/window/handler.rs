@@ -7,32 +7,16 @@ use winit::event::WindowEvent;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
-pub(crate) struct WindowSpecs {
-    pub(crate) title: String,
-    pub(crate) width: u32,
-    pub(crate) height: u32,
-    pub(crate) resizable: bool,
-}
+use super::WindowSpecs;
 
-impl Default for WindowSpecs {
-    fn default() -> Self {
-        Self {
-            title: "reng".into(),
-            width: 960,
-            height: 540,
-            resizable: true,
-        }
-    }
-}
-
-pub(crate) struct WindowHandler {
+pub struct WindowHandler {
     specs: WindowSpecs,
     window: Option<Window>,
     startup_error: Option<OsError>,
 }
 
 impl WindowHandler {
-    pub(crate) fn new(specs: WindowSpecs) -> Self {
+    pub fn new(specs: WindowSpecs) -> Self {
         tracing::info!(
             title = %specs.title,
             width = specs.width,
@@ -47,7 +31,7 @@ impl WindowHandler {
         }
     }
 
-    pub(crate) fn run(mut self) -> Result<(), Box<dyn Error>> {
+    pub fn run(mut self) -> Result<(), Box<dyn Error>> {
         let event_loop = tracing::info_span!("initialize_event_loop")
             .in_scope(EventLoop::new)
             .inspect_err(|error| tracing::error!(%error, "Event loop creation failed"))?;
