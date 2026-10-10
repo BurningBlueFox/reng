@@ -14,6 +14,7 @@ pub fn init() -> Result<(), Box<dyn Error>> {
                 .without_time()
                 .with_writer(MakeWebConsoleWriter::new()),
         )
+        .with(tracing_web::performance_layer())
         .try_init()?;
     Ok(())
 }

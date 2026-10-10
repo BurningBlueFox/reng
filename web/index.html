@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>reng</title>
+    <link rel="icon" href="data:," />
+    <style>
+      html, body { margin: 0; width: 100%; height: 100%; }
+      canvas { display: block; width: 100%; height: 100%; }
+      #status { margin: 1rem; font-family: system-ui, sans-serif; }
+    </style>
+  </head>
+  <body>
+    <p id="status" role="status">Starting reng…</p>
+    <script type="module">
+      const status = document.getElementById("status");
+      try {
+        const { default: init } = await import("./pkg/reng.js");
+        await init();
+        document.querySelector("canvas").setAttribute("aria-label", "reng game canvas");
+        status.remove();
+      } catch (error) {
+        console.error("reng failed to start", error);
+        status.setAttribute("role", "alert");
+        status.textContent = `reng failed to start: ${error}`;
+      }
+    </script>
+  </body>
+</html>

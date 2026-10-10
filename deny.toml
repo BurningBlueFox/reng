@@ -1,0 +1,19 @@
+[graph]
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin", "x86_64-pc-windows-msvc", "wasm32-unknown-unknown"]
+
+[advisories]
+yanked = "deny"
+unmaintained = "workspace"
+
+[licenses]
+include-dev = true
+allow = ["Apache-2.0", "MIT", "Unicode-3.0", "Zlib"]
+exceptions = [{ crate = "reng", allow = ["GPL-3.0-or-later"] }]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
