@@ -8,6 +8,8 @@ A game engine written in Rust, intended for macOS, Windows, and web through WebA
 
 Window management uses [winit](https://docs.rs/winit/0.30.13/winit/). Rendering with [wgpu](https://wgpu.rs/) and browser packaging are planned.
 
+`main.rs` starts `WindowHandler` with `WindowSpecs::default()`. The specs hold the title, logical width and height, and resizable flag. All `winit` integration and window lifecycle logic live in `src/window.rs`.
+
 ## Run
 
 Use a stable Rust toolchain supporting the Rust 2024 edition:
