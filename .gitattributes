@@ -69,3 +69,12 @@
 *.[oO][rR][fF] filter=lfs diff=lfs merge=lfs -text
 *.[pP][eE][fF] filter=lfs diff=lfs merge=lfs -text
 *.[rR][aA][wW] filter=lfs diff=lfs merge=lfs -text
+*.[aA][iI] filter=lfs diff=lfs merge=lfs -text
+*.[eE][pP][sS] filter=lfs diff=lfs merge=lfs -text
+*.[eE][pP][sS][fF] filter=lfs diff=lfs merge=lfs -text
+*.[eE][pP][sS][iI] filter=lfs diff=lfs merge=lfs -text
+*.[eE][mM][fF] filter=lfs diff=lfs merge=lfs -text
+*.[wW][mM][fF] filter=lfs diff=lfs merge=lfs -text
+*.[pP][fF][mM] filter=lfs diff=lfs merge=lfs -text
+*.[bB][aA][sS][iI][sS] filter=lfs diff=lfs merge=lfs -text
+*.[aA][sS][tT][cC] filter=lfs diff=lfs merge=lfs -text
