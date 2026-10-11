@@ -54,7 +54,7 @@ npx playwright install chromium
 npm run test:web
 ```
 
-Install `wasm-bindgen-cli` 0.2.129 with `cargo install wasm-bindgen-cli --version 0.2.129 --locked`; it must match the Rust dependency. Node.js 24 and Python 3 are required for the web commands. `npm run serve:web` serves the generated browser build on localhost:18080. Keep browser tests in `web/tests/`, separate from production code. On Linux, install `xvfb xauth libvulkan1 mesa-vulkan-drivers` and run `xvfb-run -a npm run test:web`; Chromium needs a virtual display for reliable WebGPU screenshots.
+Install `wasm-bindgen-cli` 0.2.129 with `cargo install wasm-bindgen-cli --version 0.2.129 --locked`; it must match the Rust dependency. Node.js 24 and Python 3 are required for the web commands. `make run-web` builds and serves the browser demo on localhost:18080 using the existing npm scripts; `npm run serve:web` serves an already generated build. Keep browser tests in `web/tests/`, separate from production code. On Linux, install `xvfb xauth libvulkan1 mesa-vulkan-drivers` and run `xvfb-run -a npm run test:web`; Chromium needs a virtual display for reliable WebGPU screenshots.
 
 For dependency changes, run `cargo deny --locked check` and `npm audit`; install `cargo-deny` 0.20.2 if needed. Keep the manifest, lockfiles, tool versions, and CI in sync. Review advisory or license failures rather than broadly suppressing them.
 

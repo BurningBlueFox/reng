@@ -58,14 +58,20 @@ Drag a window edge or corner to resize it, then use the native close button to e
 
 ## Run in a browser
 
-Install Node.js 24 LTS and Python 3, then install the build and test tools:
+Install Make, Node.js 24 LTS, and Python 3, then install the build and test tools:
 
 ```sh
 cargo install wasm-bindgen-cli --version 0.2.129 --locked
 npm ci
-npm run build:web
-npm run serve:web
 ```
+
+Build and serve the browser demo with:
+
+```sh
+make run-web
+```
+
+This runs the existing `npm run build:web` and `npm run serve:web` scripts in sequence.
 
 Open [localhost:18080](http://localhost:18080) in a browser with WebGPU enabled and a supported GPU. WebGPU requires a secure context; localhost is allowed, deployed builds need HTTPS. There is no WebGL fallback. Stop the local server with Ctrl+C. `web/pkg/` contains generated JavaScript and WebAssembly and is ignored by Git; rebuild it after Rust changes. The `wasm-bindgen` CLI and Rust dependency must use the same version, so update both the manifest and CI install command together.
 
