@@ -53,7 +53,7 @@ Tests always live in dedicated files, with unit tests declared from a module usi
 Install [Rust through rustup](https://rustup.rs/) and Node.js 24 LTS. `rust-toolchain.toml` pins Rust 1.99.0, rustfmt, Clippy, rust-analyzer, and the WebAssembly target; rustup installs them automatically on the first build. Launch the desktop debug build with:
 
 ```sh
-npm run run-desktop
+npm run desktop
 ```
 
 Drag a window edge or corner to resize it, then use the native close button to exit.
@@ -70,7 +70,7 @@ npm ci
 Build, serve, and open the browser demo with:
 
 ```sh
-npm run run-web
+npm run web
 ```
 
 This builds the WebAssembly debug bundle with `npm run build:web`, then starts the local server and opens your default browser once the server is listening. `npm run serve:web` serves an existing build without opening a browser. Both launch commands use Cargo's default debug profile.
@@ -81,13 +81,13 @@ The demo runs at [localhost:18080](http://localhost:18080). Your default browser
 
 ## Logging and traces
 
-Native runs print leveled, structured logs to stdout and overwrite `trace.json` in the current working directory. Running `npm run run-desktop` from this repository writes the file here; Git ignores it. Close the window normally to finish and flush the capture, then open the file at [ui.perfetto.dev](https://ui.perfetto.dev/) using **Open trace file**. Copy the file elsewhere before the next run if you want to keep it.
+Native runs print leveled, structured logs to stdout and overwrite `trace.json` in the current working directory. Running `npm run desktop` from this repository writes the file here; Git ignores it. Close the window normally to finish and flush the capture, then open the file at [ui.perfetto.dev](https://ui.perfetto.dev/) using **Open trace file**. Copy the file elsewhere before the next run if you want to keep it.
 
 The default level is `INFO`. Set `RUST_LOG` to filter both console output and the trace, for example:
 
 ```sh
-RUST_LOG=debug npm run run-desktop
-RUST_LOG=reng=debug,winit=warn npm run run-desktop
+RUST_LOG=debug npm run desktop
+RUST_LOG=reng=debug,winit=warn npm run desktop
 ```
 
 Invalid filter directives or an unwritable trace file fail startup with an error. Logs and spans cover application and event-loop startup/shutdown, window configuration and creation, resize callbacks (physical pixel dimensions), closing, GPU initialization, frame submission/presentation, and failures. Span fields are included in the trace, and a global subscriber collects events from all threads. Trace durations measure elapsed time in instrumented scopes, not GPU timings.

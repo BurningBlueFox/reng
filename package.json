@@ -2,8 +2,8 @@
   "name": "reng-web-checks",
   "private": true,
   "scripts": {
-    "run-web": "npm run build:web && npm run serve:web -- --open",
-    "run-desktop": "cargo run --locked",
+    "web": "npm run build:web && npm run serve:web -- --open",
+    "desktop": "cargo run --locked",
     "build:web": "cargo build --locked --lib --target wasm32-unknown-unknown && wasm-bindgen --target web --out-dir web/pkg target/wasm32-unknown-unknown/debug/reng.wasm",
     "serve:web": "python3 -B web/serve.py",
     "test:web": "playwright test",

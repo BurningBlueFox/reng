@@ -3,6 +3,8 @@ const linux = process.platform === "linux";
 
 module.exports = defineConfig({
   testDir: "./web/tests",
+  // Give software WebGPU the runner resources without competing browser processes.
+  workers: process.env.CI ? 1 : undefined,
   snapshotPathTemplate: "{testDir}/snapshots/{arg}{ext}",
   use: {
     baseURL: "http://127.0.0.1:18080",
