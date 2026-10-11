@@ -116,7 +116,7 @@ npx playwright install chromium
 npm run test:web
 ```
 
-The Playwright tests run a local server and check startup, timing spans, viewport resizing, physical resize events, actual background pixels, zero-size recovery, and visible module-loading, unavailable WebGPU, or asynchronous GPU validation failures. They run headless Chromium and keep test code under `web/tests/`. CI uses Chromium's software WebGPU adapter; this is a rendering regression check, while hardware and browser compatibility still need runtime verification.
+The Playwright tests run a local server and check startup, timing spans, viewport resizing, physical resize events, actual background pixels, zero-size recovery, and visible module-loading, unavailable WebGPU, or asynchronous GPU validation failures. They keep test code under `web/tests/` and use Chromium's software WebGPU adapter. macOS runs headless; Linux runs under Xvfb with Vulkan/Mesa (`sudo apt-get install xvfb xauth libvulkan1 mesa-vulkan-drivers`, then `xvfb-run -a npm run test:web`). This [Linux configuration](https://github.com/vercel-labs/vgpu/issues/109) avoids blank WebGPU screenshots in headless mode; this is a rendering regression check, while hardware and browser compatibility still need runtime verification.
 
 For dependencies:
 
