@@ -37,55 +37,57 @@ src/
     └── mod.rs
 web/
 ├── index.html
+├── serve.py
 └── tests/
     ├── window.spec.js
-    └── renderer.spec.js
+    ├── renderer.spec.js
+    └── test_serve.py
 ```
 
 `lib.rs` exports the `window`, `scene`, and `telemetry` modules. The renderer is internal to the engine. Each subsystem's `mod.rs` keeps implementation modules private and exports its public entry points. `main.rs` explicitly initializes telemetry, keeps the trace guard alive through shutdown, and runs the window. Telemetry selects native or browser output at compile time; window code only emits logs and spans.
 
 Tests always live in dedicated files, with unit tests declared from a module using `mod tests;` under the appropriate `cfg` and integration tests under `tests/`. Test bodies, helpers, and fixtures never share production implementation files.
 
-## Run
+## Run on desktop (debug)
 
-Install [Rust through rustup](https://rustup.rs/). `rust-toolchain.toml` pins Rust 1.99.0, rustfmt, Clippy, rust-analyzer, and the WebAssembly target; rustup installs them automatically when a Cargo command runs here:
+Install [Rust through rustup](https://rustup.rs/) and Node.js 24 LTS. `rust-toolchain.toml` pins Rust 1.99.0, rustfmt, Clippy, rust-analyzer, and the WebAssembly target; rustup installs them automatically on the first build. Launch the desktop debug build with:
 
 ```sh
-cargo run --locked
+npm run run-desktop
 ```
 
 Drag a window edge or corner to resize it, then use the native close button to exit.
 
-## Run in a browser
+## Run in a browser (debug)
 
-Install Make, Node.js 24 LTS, and Python 3, then install the build and test tools:
+Install Python 3, then install the browser build and test tools:
 
 ```sh
 cargo install wasm-bindgen-cli --version 0.2.129 --locked
 npm ci
 ```
 
-Build and serve the browser demo with:
+Build, serve, and open the browser demo with:
 
 ```sh
-make run-web
+npm run run-web
 ```
 
-This runs the existing `npm run build:web` and `npm run serve:web` scripts in sequence.
+This builds the WebAssembly debug bundle with `npm run build:web`, then starts the local server and opens your default browser once the server is listening. `npm run serve:web` serves an existing build without opening a browser. Both launch commands use Cargo's default debug profile.
 
-Open [localhost:18080](http://localhost:18080) in a browser with WebGPU enabled and a supported GPU. WebGPU requires a secure context; localhost is allowed, deployed builds need HTTPS. There is no WebGL fallback. Stop the local server with Ctrl+C. `web/pkg/` contains generated JavaScript and WebAssembly and is ignored by Git; rebuild it after Rust changes. The `wasm-bindgen` CLI and Rust dependency must use the same version, so update both the manifest and CI install command together.
+The demo runs at [localhost:18080](http://localhost:18080). Your default browser needs WebGPU enabled and a supported GPU; if it cannot be opened automatically, the terminal prints the URL to open manually. WebGPU requires a secure context; localhost is allowed, deployed builds need HTTPS. There is no WebGL fallback. Stop the local server with Ctrl+C. `web/pkg/` contains generated JavaScript and WebAssembly and is ignored by Git; rebuild it after Rust changes. The `wasm-bindgen` CLI and Rust dependency must use the same version, so update both the manifest and CI install command together.
 
 `src/web/mod.rs` is the WebAssembly startup entry point. It installs panic diagnostics, initializes telemetry, and starts the shared window handler using winit's nonblocking browser event loop. CSS controls canvas size; winit reports physical pixel resize events, and the renderer updates the canvas drawing buffer. The loading message remains until GPU initialization completes. Startup and rendering failures appear on the page and in the console.
 
 ## Logging and traces
 
-Native runs print leveled, structured logs to stdout and overwrite `trace.json` in the current working directory. Running `cargo run --locked` from this repository writes the file here; Git ignores it. Close the window normally to finish and flush the capture, then open the file at [ui.perfetto.dev](https://ui.perfetto.dev/) using **Open trace file**. Copy the file elsewhere before the next run if you want to keep it.
+Native runs print leveled, structured logs to stdout and overwrite `trace.json` in the current working directory. Running `npm run run-desktop` from this repository writes the file here; Git ignores it. Close the window normally to finish and flush the capture, then open the file at [ui.perfetto.dev](https://ui.perfetto.dev/) using **Open trace file**. Copy the file elsewhere before the next run if you want to keep it.
 
 The default level is `INFO`. Set `RUST_LOG` to filter both console output and the trace, for example:
 
 ```sh
-RUST_LOG=debug cargo run --locked
-RUST_LOG=reng=debug,winit=warn cargo run --locked
+RUST_LOG=debug npm run run-desktop
+RUST_LOG=reng=debug,winit=warn npm run run-desktop
 ```
 
 Invalid filter directives or an unwritable trace file fail startup with an error. Logs and spans cover application and event-loop startup/shutdown, window configuration and creation, resize callbacks (physical pixel dimensions), closing, GPU initialization, frame submission/presentation, and failures. Span fields are included in the trace, and a global subscriber collects events from all threads. Trace durations measure elapsed time in instrumented scopes, not GPU timings.
@@ -119,6 +121,7 @@ For browser changes:
 cargo clippy --lib --locked --target wasm32-unknown-unknown -- -D warnings
 npm run build:web
 npx playwright install chromium
+npm run test:launcher
 npm run test:web
 ```
 
@@ -152,7 +155,7 @@ If engine code later requires unstable features, pin a dated toolchain such as `
 
 ## Rendering proof of concept
 
-The background clear was verified on macOS using the M1 Max Metal adapter, including zoom/restore resizing at Retina resolution and clean window closure. It also ran through WebGPU in the Codex browser on macOS with no warnings or errors. Chromium software WebGPU tests compare the rendered image at two sizes and after zero-size recovery. Windows, Safari, and Firefox runtime rendering remain unverified.
+The background clear was verified on macOS using the M1 Max Metal adapter, including zoom/restore resizing at Retina resolution and clean window closure. It also ran through WebGPU in the Codex browser on macOS with no warnings or errors. Chromium software WebGPU tests compare the rendered image at two sizes and after zero-size recovery. The npm web launcher also opened Safari on macOS and rendered the background successfully. Windows and Firefox runtime rendering remain unverified.
 
 ![GPU background clear on macOS](docs/screenshots/reng-renderer-macos.png)
 
@@ -175,7 +178,7 @@ Add each dependency when its feature needs it. Some proposed crates already arri
 | Remote telemetry | OpenTelemetry and an exporter | When we need a collector or shared analysis beyond local console and Perfetto captures. |
 | Engine systems | Assets, ECS, audio, physics, editor | After the rendering and input milestones, driven by a small playable example. No libraries selected yet. |
 
-Verify the renderer on real macOS and Windows GPUs and in browsers before claiming platform support. WebGPU is the initial browser rendering target; a WebGL2 fallback needs a separate decision and its own tests. Safari and Firefox runtime coverage can be added as the browser path grows.
+Verify the renderer on real macOS and Windows GPUs and in browsers before claiming platform support. WebGPU is the initial browser rendering target; a WebGL2 fallback needs a separate decision and its own tests. Additional Safari and Firefox automated coverage can be added as the browser path grows.
 
 ## Agent tooling
 

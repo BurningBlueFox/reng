@@ -2,9 +2,12 @@
   "name": "reng-web-checks",
   "private": true,
   "scripts": {
+    "run-web": "npm run build:web && npm run serve:web -- --open",
+    "run-desktop": "cargo run --locked",
     "build:web": "cargo build --locked --lib --target wasm32-unknown-unknown && wasm-bindgen --target web --out-dir web/pkg target/wasm32-unknown-unknown/debug/reng.wasm",
-    "serve:web": "python3 -m http.server 18080 --bind 127.0.0.1 --directory web",
-    "test:web": "playwright test"
+    "serve:web": "python3 -B web/serve.py",
+    "test:web": "playwright test",
+    "test:launcher": "python3 -B -m unittest discover -s web/tests -p \"test_*.py\""
   },
   "devDependencies": {
     "@playwright/test": "1.64.0"
