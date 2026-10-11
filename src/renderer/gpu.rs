@@ -54,6 +54,15 @@ impl Renderer {
                     callback_window.request_redraw();
                 }
             });
+            let callback_error = device_error.clone();
+            let callback_window = window.clone();
+            device.on_uncaptured_error(Arc::new(move |error| {
+                tracing::error!(%error, "GPU validation or allocation failed");
+                if let Ok(mut failure) = callback_error.lock() {
+                    *failure = Some(format!("GPU error: {error}"));
+                }
+                callback_window.request_redraw();
+            }));
             let size = window.inner_size();
             let config = surface_config(&surface, &adapter, size)?;
             let info = adapter.get_info();

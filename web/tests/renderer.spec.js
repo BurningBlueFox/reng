@@ -42,3 +42,25 @@ test("reports unavailable WebGPU visibly", async ({ page }) => {
   await expect(page.getByRole("alert")).toContainText("No suitable graphics adapter found");
   await expect(page.locator("canvas")).toHaveCount(0);
 });
+
+test("shows asynchronous GPU validation failures and stops drawing", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.rengTestDevices = [];
+    const requestDevice = GPUAdapter.prototype.requestDevice;
+    GPUAdapter.prototype.requestDevice = async function (...args) {
+      const device = await requestDevice.apply(this, args);
+      window.rengTestDevices.push(device);
+      return device;
+    };
+  });
+  await page.goto("/");
+  await expect(page.locator("#status")).toHaveCount(0);
+  await page.evaluate(() => {
+    // wgpu can also create a temporary device to probe browser capabilities.
+    const device = window.rengTestDevices.find((entry) => entry.onuncapturederror);
+    device.createTexture({ size: [1, 1], format: "rgba8unorm", usage: 0 });
+    device.queue.submit([]);
+  });
+  await expect(page.getByRole("alert")).toContainText("GPU error:");
+  await expect(page.locator("canvas")).toHaveCount(0);
+});
