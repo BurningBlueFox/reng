@@ -37,9 +37,11 @@ src/
     └── mod.rs
 web/
 ├── index.html
+├── serve.py
 └── tests/
     ├── window.spec.js
-    └── renderer.spec.js
+    ├── renderer.spec.js
+    └── test_serve.py
 ```
 
 `lib.rs` exports the `window`, `scene`, and `telemetry` modules. The renderer is internal to the engine. Each subsystem's `mod.rs` keeps implementation modules private and exports its public entry points. `main.rs` explicitly initializes telemetry, keeps the trace guard alive through shutdown, and runs the window. Telemetry selects native or browser output at compile time; window code only emits logs and spans.
@@ -65,15 +67,15 @@ cargo install wasm-bindgen-cli --version 0.2.129 --locked
 npm ci
 ```
 
-Build and serve the browser demo with:
+Build, serve, and open the browser demo with:
 
 ```sh
 npm run run-web
 ```
 
-This builds the WebAssembly debug bundle with `npm run build:web`, then starts the local server with `npm run serve:web`. Both launch commands use Cargo's default debug profile.
+This builds the WebAssembly debug bundle with `npm run build:web`, then starts the local server and opens your default browser once the server is listening. `npm run serve:web` serves an existing build without opening a browser. Both launch commands use Cargo's default debug profile.
 
-Open [localhost:18080](http://localhost:18080) in a browser with WebGPU enabled and a supported GPU. WebGPU requires a secure context; localhost is allowed, deployed builds need HTTPS. There is no WebGL fallback. Stop the local server with Ctrl+C. `web/pkg/` contains generated JavaScript and WebAssembly and is ignored by Git; rebuild it after Rust changes. The `wasm-bindgen` CLI and Rust dependency must use the same version, so update both the manifest and CI install command together.
+The demo runs at [localhost:18080](http://localhost:18080). Your default browser needs WebGPU enabled and a supported GPU; if it cannot be opened automatically, the terminal prints the URL to open manually. WebGPU requires a secure context; localhost is allowed, deployed builds need HTTPS. There is no WebGL fallback. Stop the local server with Ctrl+C. `web/pkg/` contains generated JavaScript and WebAssembly and is ignored by Git; rebuild it after Rust changes. The `wasm-bindgen` CLI and Rust dependency must use the same version, so update both the manifest and CI install command together.
 
 `src/web/mod.rs` is the WebAssembly startup entry point. It installs panic diagnostics, initializes telemetry, and starts the shared window handler using winit's nonblocking browser event loop. CSS controls canvas size; winit reports physical pixel resize events, and the renderer updates the canvas drawing buffer. The loading message remains until GPU initialization completes. Startup and rendering failures appear on the page and in the console.
 
@@ -119,6 +121,7 @@ For browser changes:
 cargo clippy --lib --locked --target wasm32-unknown-unknown -- -D warnings
 npm run build:web
 npx playwright install chromium
+npm run test:launcher
 npm run test:web
 ```
 
@@ -152,7 +155,7 @@ If engine code later requires unstable features, pin a dated toolchain such as `
 
 ## Rendering proof of concept
 
-The background clear was verified on macOS using the M1 Max Metal adapter, including zoom/restore resizing at Retina resolution and clean window closure. It also ran through WebGPU in the Codex browser on macOS with no warnings or errors. Chromium software WebGPU tests compare the rendered image at two sizes and after zero-size recovery. Windows, Safari, and Firefox runtime rendering remain unverified.
+The background clear was verified on macOS using the M1 Max Metal adapter, including zoom/restore resizing at Retina resolution and clean window closure. It also ran through WebGPU in the Codex browser on macOS with no warnings or errors. Chromium software WebGPU tests compare the rendered image at two sizes and after zero-size recovery. The npm web launcher also opened Safari on macOS and rendered the background successfully. Windows and Firefox runtime rendering remain unverified.
 
 ![GPU background clear on macOS](docs/screenshots/reng-renderer-macos.png)
 
@@ -175,7 +178,7 @@ Add each dependency when its feature needs it. Some proposed crates already arri
 | Remote telemetry | OpenTelemetry and an exporter | When we need a collector or shared analysis beyond local console and Perfetto captures. |
 | Engine systems | Assets, ECS, audio, physics, editor | After the rendering and input milestones, driven by a small playable example. No libraries selected yet. |
 
-Verify the renderer on real macOS and Windows GPUs and in browsers before claiming platform support. WebGPU is the initial browser rendering target; a WebGL2 fallback needs a separate decision and its own tests. Safari and Firefox runtime coverage can be added as the browser path grows.
+Verify the renderer on real macOS and Windows GPUs and in browsers before claiming platform support. WebGPU is the initial browser rendering target; a WebGL2 fallback needs a separate decision and its own tests. Additional Safari and Firefox automated coverage can be added as the browser path grows.
 
 ## Agent tooling
 

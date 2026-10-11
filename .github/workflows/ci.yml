@@ -26,6 +26,7 @@ jobs:
       - run: cargo clippy --lib --locked --target wasm32-unknown-unknown -- -D warnings
       - run: cargo install wasm-bindgen-cli --version 0.2.129 --locked
       - run: npm ci
+      - run: npm run test:launcher
       - run: npm run build:web
       - run: npx playwright install --with-deps chromium
       - run: sudo apt-get update && sudo apt-get install -y xvfb xauth libvulkan1 mesa-vulkan-drivers
