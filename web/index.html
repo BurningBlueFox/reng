@@ -8,22 +8,28 @@
     <style>
       html, body { margin: 0; width: 100%; height: 100%; }
       canvas { display: block; width: 100%; height: 100%; }
-      #status { margin: 1rem; font-family: system-ui, sans-serif; }
+      #status { position: fixed; top: 0; left: 0; margin: 1rem; font-family: system-ui, sans-serif; }
     </style>
   </head>
   <body>
     <p id="status" role="status">Starting reng…</p>
     <script type="module">
       const status = document.getElementById("status");
-      try {
-        const { default: init } = await import("./pkg/reng.js");
-        await init();
-        document.querySelector("canvas").setAttribute("aria-label", "reng game canvas");
-        status.remove();
-      } catch (error) {
+      const showError = (error) => {
         console.error("reng failed to start", error);
         status.setAttribute("role", "alert");
         status.textContent = `reng failed to start: ${error}`;
+        document.body.append(status);
+        document.querySelector("canvas")?.remove();
+      };
+      window.addEventListener("reng-error", (event) => showError(event.detail));
+      window.addEventListener("reng-ready", () => status.remove(), { once: true });
+      try {
+        const { default: init } = await import("./pkg/reng.js");
+        await init();
+        document.querySelector("canvas")?.setAttribute("aria-label", "reng game canvas");
+      } catch (error) {
+        showError(error);
       }
     </script>
   </body>

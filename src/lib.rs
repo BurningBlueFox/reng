@@ -1,3 +1,5 @@
+mod renderer;
+pub mod scene;
 pub mod telemetry;
 pub mod window;
 

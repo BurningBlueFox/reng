@@ -4,11 +4,11 @@ A game engine written in Rust, intended for macOS, Windows, and web through WebA
 
 ## Current milestone
 
-`reng` opens a resizable native window titled **reng**, initially 960 × 540 logical pixels. Closing the window exits the application. The event loop sleeps while idle; there is no drawing or GPU initialization yet.
+`reng` opens a resizable native window titled **reng**, initially 960 × 540 logical pixels, or a browser canvas that fills the viewport. [wgpu](https://docs.rs/wgpu/30.0.1/wgpu/) clears the background to a teal color on startup and redraws when resized or exposed. Closing the native window exits the application; the event loop sleeps while idle.
 
-The browser build opens a blank canvas that fills and resizes with the viewport. Window management on both platforms uses [winit](https://docs.rs/winit/0.30.13/winit/). Rendering with [wgpu](https://wgpu.rs/) is the next milestone.
+Window management uses [winit](https://docs.rs/winit/0.30.13/winit/). Rendering uses Metal on macOS, DirectX 12 on Windows, and WebGPU in the browser. Browser GPU startup is asynchronous. Resize events configure the surface in physical pixels; zero dimensions skip configuration and drawing. Outdated or lost surfaces are reconfigured or recreated, and temporary acquisition timeouts retry. GPU initialization, validation, or device-loss failures are reported; device loss currently requires restarting the app.
 
-`main.rs` starts `WindowHandler` with `WindowSpecs::default()`. The specs hold the title, logical width and height, and resizable flag. `WindowSpecs` lives in `src/window/specs.rs`; `winit` integration and window lifecycle logic live in `src/window/handler.rs`.
+`main.rs` passes `WindowSpecs::default()` and `Scene::default()` to `WindowHandler`. Window specs live in `src/window/specs.rs`, lifecycle logic in `src/window/handler.rs`, and GPU operations in `src/renderer/gpu.rs`. **Edit the background color in `src/scene/data.rs`**: `Scene` holds linear RGBA data consumed by the renderer. Geometry, vertex positions, and colors must also stay in scene data when triangle drawing is added; this milestone only clears the background.
 
 ## Code layout
 
@@ -22,6 +22,12 @@ src/
 │   ├── mod.rs
 │   ├── specs.rs
 │   └── handler.rs
+├── scene/
+│   ├── mod.rs
+│   └── data.rs
+├── renderer/
+│   ├── mod.rs
+│   └── gpu.rs
 ├── telemetry/
 │   ├── mod.rs
 │   ├── native.rs
@@ -32,10 +38,11 @@ src/
 web/
 ├── index.html
 └── tests/
-    └── window.spec.js
+    ├── window.spec.js
+    └── renderer.spec.js
 ```
 
-`lib.rs` exports the `window` and `telemetry` modules. Each subsystem's `mod.rs` keeps implementation modules private and exports its public entry points. `main.rs` explicitly initializes telemetry, keeps the trace guard alive through shutdown, and runs the window. Telemetry selects native or browser output at compile time; window code only emits logs and spans.
+`lib.rs` exports the `window`, `scene`, and `telemetry` modules. The renderer is internal to the engine. Each subsystem's `mod.rs` keeps implementation modules private and exports its public entry points. `main.rs` explicitly initializes telemetry, keeps the trace guard alive through shutdown, and runs the window. Telemetry selects native or browser output at compile time; window code only emits logs and spans.
 
 Tests always live in dedicated files, with unit tests declared from a module using `mod tests;` under the appropriate `cfg` and integration tests under `tests/`. Test bodies, helpers, and fixtures never share production implementation files.
 
@@ -51,18 +58,24 @@ Drag a window edge or corner to resize it, then use the native close button to e
 
 ## Run in a browser
 
-Install Node.js 24 LTS and Python 3, then install the build and test tools:
+Install Make, Node.js 24 LTS, and Python 3, then install the build and test tools:
 
 ```sh
 cargo install wasm-bindgen-cli --version 0.2.129 --locked
 npm ci
-npm run build:web
-npm run serve:web
 ```
 
-Open [localhost:18080](http://localhost:18080). Stop the local server with Ctrl+C. `web/pkg/` contains generated JavaScript and WebAssembly and is ignored by Git; rebuild it after Rust changes. The `wasm-bindgen` CLI and Rust dependency must use the same version, so update both the manifest and CI install command together.
+Build and serve the browser demo with:
 
-`src/web/mod.rs` is the WebAssembly startup entry point. It installs panic diagnostics, initializes telemetry, and starts the shared window handler using winit's nonblocking browser event loop. CSS controls canvas size; winit reports physical pixel resize events. Startup failures appear on the page and in the console.
+```sh
+make run-web
+```
+
+This runs the existing `npm run build:web` and `npm run serve:web` scripts in sequence.
+
+Open [localhost:18080](http://localhost:18080) in a browser with WebGPU enabled and a supported GPU. WebGPU requires a secure context; localhost is allowed, deployed builds need HTTPS. There is no WebGL fallback. Stop the local server with Ctrl+C. `web/pkg/` contains generated JavaScript and WebAssembly and is ignored by Git; rebuild it after Rust changes. The `wasm-bindgen` CLI and Rust dependency must use the same version, so update both the manifest and CI install command together.
+
+`src/web/mod.rs` is the WebAssembly startup entry point. It installs panic diagnostics, initializes telemetry, and starts the shared window handler using winit's nonblocking browser event loop. CSS controls canvas size; winit reports physical pixel resize events, and the renderer updates the canvas drawing buffer. The loading message remains until GPU initialization completes. Startup and rendering failures appear on the page and in the console.
 
 ## Logging and traces
 
@@ -75,7 +88,7 @@ RUST_LOG=debug cargo run --locked
 RUST_LOG=reng=debug,winit=warn cargo run --locked
 ```
 
-Invalid filter directives or an unwritable trace file fail startup with an error. Logs and spans cover application and event-loop startup/shutdown, window configuration and creation, resize callbacks (physical pixel dimensions), closing, and failures. Span fields are included in the trace, and a global subscriber collects events from all threads. Trace durations measure elapsed time in instrumented scopes, not GPU timings.
+Invalid filter directives or an unwritable trace file fail startup with an error. Logs and spans cover application and event-loop startup/shutdown, window configuration and creation, resize callbacks (physical pixel dimensions), closing, GPU initialization, frame submission/presentation, and failures. Span fields are included in the trace, and a global subscriber collects events from all threads. Trace durations measure elapsed time in instrumented scopes, not GPU timings.
 
 The trace writer flushes when the application returns, including returned errors. Forced termination can leave an incomplete file. Run one instance per working directory so concurrent runs do not overwrite the same capture.
 
@@ -109,7 +122,7 @@ npx playwright install chromium
 npm run test:web
 ```
 
-The Playwright tests run a local server, check startup, timing spans, viewport resizing, physical resize events, and visible module-loading failures. They run headless Chromium and keep test code under `web/tests/`.
+The Playwright tests run a local server and check startup, timing spans, viewport resizing, physical resize events, actual background pixels, zero-size recovery, and visible module-loading, unavailable WebGPU, or asynchronous GPU validation failures. They keep test code under `web/tests/` and use Chromium's software WebGPU adapter. macOS runs headless; Linux runs under Xvfb with Vulkan/Mesa (`sudo apt-get install xvfb xauth libvulkan1 mesa-vulkan-drivers`, then `xvfb-run -a npm run test:web`). This [Linux configuration](https://github.com/vercel-labs/vgpu/issues/109) avoids blank WebGPU screenshots in headless mode; this is a rendering regression check, while hardware and browser compatibility still need runtime verification.
 
 For dependencies:
 
@@ -137,11 +150,13 @@ Nightly diagnostics can coexist with stable builds: select nightly explicitly fo
 
 If engine code later requires unstable features, pin a dated toolchain such as `nightly-YYYY-MM-DD` and verify macOS and Windows builds and runtime behavior, plus `wasm32-unknown-unknown` compilation and browser execution when web packaging exists. Review compatibility before updating that pin.
 
-## macOS proof of concept
+## Rendering proof of concept
 
-The window was opened, resized with the native zoom/restore control, and closed successfully on macOS. The browser canvas is covered by startup and resize tests in Chromium. Windows GUI execution and rendering on any platform remain unverified.
+The background clear was verified on macOS using the M1 Max Metal adapter, including zoom/restore resizing at Retina resolution and clean window closure. It also ran through WebGPU in the Codex browser on macOS with no warnings or errors. Chromium software WebGPU tests compare the rendered image at two sizes and after zero-size recovery. Windows, Safari, and Firefox runtime rendering remain unverified.
 
-![Resizable reng window on macOS](docs/screenshots/resizable-window-macos.jpg)
+![GPU background clear on macOS](docs/screenshots/reng-renderer-macos.png)
+
+![WebGPU background clear in the browser](docs/screenshots/reng-renderer-web.jpg)
 
 See [AGENTS.md](AGENTS.md) for project conventions and validation commands.
 
@@ -151,8 +166,7 @@ Add each dependency when its feature needs it. Some proposed crates already arri
 
 | Next feature | Planned additions | When to add them |
 | --- | --- | --- |
-| First renderer | `wgpu`, WGSL shaders | Clear the window and canvas, then draw the same colored triangle on macOS, Windows, and web; handle resize, display scaling, zero size, and surface errors. |
-| GPU startup | `pollster` on native; `wasm-bindgen-futures` on web | When asynchronous adapter and device initialization exists. Keep the browser event loop nonblocking. |
+| Triangle drawing | WGSL shaders | Draw the same colored triangle on macOS, Windows, and web; keep vertex and color data in `src/scene/`, outside the renderer. `wgpu`, native `pollster`, and web `wasm-bindgen-futures` are already in use. |
 | Vertex and uniform buffers | `bytemuck` | When passing typed Rust data to GPU buffers. |
 | Camera and transforms | `glam` | When the first scene needs vector and matrix math. |
 | Frame loop and input | A shared frame clock, potentially `web-time` | When continuous updates replace the current idle event loop; add keyboard and pointer handling then. |

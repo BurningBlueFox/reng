@@ -1,0 +1,2 @@
+/* Exclude the browser focus ring from GPU pixel checks. */
+canvas { outline: none !important; }
