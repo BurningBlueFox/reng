@@ -32,7 +32,8 @@ Codex enables the official plugin through `.codex/config.toml`. See README.md fo
 Use the Rust 1.99.0 toolchain pinned in `rust-toolchain.toml`. Run commands from the repository root:
 
 ```sh
-cargo run --locked
+npm run run-desktop
+npm run run-web
 cargo build --locked
 ```
 
@@ -54,7 +55,7 @@ npx playwright install chromium
 npm run test:web
 ```
 
-Install `wasm-bindgen-cli` 0.2.129 with `cargo install wasm-bindgen-cli --version 0.2.129 --locked`; it must match the Rust dependency. Node.js 24 and Python 3 are required for the web commands. `make run-web` builds and serves the browser demo on localhost:18080 using the existing npm scripts; `npm run serve:web` serves an already generated build. Keep browser tests in `web/tests/`, separate from production code. On Linux, install `xvfb xauth libvulkan1 mesa-vulkan-drivers` and run `xvfb-run -a npm run test:web`; Chromium needs a virtual display for reliable WebGPU screenshots.
+Install `wasm-bindgen-cli` 0.2.129 with `cargo install wasm-bindgen-cli --version 0.2.129 --locked`; it must match the Rust dependency. Node.js 24 is required for the npm interface; Python 3 is also required for the web commands. Use `npm run run-desktop` for the native debug build and `npm run run-web` to build and serve the browser debug bundle on localhost:18080 using the existing npm scripts; `npm run serve:web` serves an already generated build. Keep browser tests in `web/tests/`, separate from production code. On Linux, install `xvfb xauth libvulkan1 mesa-vulkan-drivers` and run `xvfb-run -a npm run test:web`; Chromium needs a virtual display for reliable WebGPU screenshots.
 
 For dependency changes, run `cargo deny --locked check` and `npm audit`; install `cargo-deny` 0.20.2 if needed. Keep the manifest, lockfiles, tool versions, and CI in sync. Review advisory or license failures rather than broadly suppressing them.
 

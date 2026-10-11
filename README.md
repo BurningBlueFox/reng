@@ -46,19 +46,19 @@ web/
 
 Tests always live in dedicated files, with unit tests declared from a module using `mod tests;` under the appropriate `cfg` and integration tests under `tests/`. Test bodies, helpers, and fixtures never share production implementation files.
 
-## Run
+## Run on desktop (debug)
 
-Install [Rust through rustup](https://rustup.rs/). `rust-toolchain.toml` pins Rust 1.99.0, rustfmt, Clippy, rust-analyzer, and the WebAssembly target; rustup installs them automatically when a Cargo command runs here:
+Install [Rust through rustup](https://rustup.rs/) and Node.js 24 LTS. `rust-toolchain.toml` pins Rust 1.99.0, rustfmt, Clippy, rust-analyzer, and the WebAssembly target; rustup installs them automatically on the first build. Launch the desktop debug build with:
 
 ```sh
-cargo run --locked
+npm run run-desktop
 ```
 
 Drag a window edge or corner to resize it, then use the native close button to exit.
 
-## Run in a browser
+## Run in a browser (debug)
 
-Install Make, Node.js 24 LTS, and Python 3, then install the build and test tools:
+Install Python 3, then install the browser build and test tools:
 
 ```sh
 cargo install wasm-bindgen-cli --version 0.2.129 --locked
@@ -68,10 +68,10 @@ npm ci
 Build and serve the browser demo with:
 
 ```sh
-make run-web
+npm run run-web
 ```
 
-This runs the existing `npm run build:web` and `npm run serve:web` scripts in sequence.
+This builds the WebAssembly debug bundle with `npm run build:web`, then starts the local server with `npm run serve:web`. Both launch commands use Cargo's default debug profile.
 
 Open [localhost:18080](http://localhost:18080) in a browser with WebGPU enabled and a supported GPU. WebGPU requires a secure context; localhost is allowed, deployed builds need HTTPS. There is no WebGL fallback. Stop the local server with Ctrl+C. `web/pkg/` contains generated JavaScript and WebAssembly and is ignored by Git; rebuild it after Rust changes. The `wasm-bindgen` CLI and Rust dependency must use the same version, so update both the manifest and CI install command together.
 
@@ -79,13 +79,13 @@ Open [localhost:18080](http://localhost:18080) in a browser with WebGPU enabled 
 
 ## Logging and traces
 
-Native runs print leveled, structured logs to stdout and overwrite `trace.json` in the current working directory. Running `cargo run --locked` from this repository writes the file here; Git ignores it. Close the window normally to finish and flush the capture, then open the file at [ui.perfetto.dev](https://ui.perfetto.dev/) using **Open trace file**. Copy the file elsewhere before the next run if you want to keep it.
+Native runs print leveled, structured logs to stdout and overwrite `trace.json` in the current working directory. Running `npm run run-desktop` from this repository writes the file here; Git ignores it. Close the window normally to finish and flush the capture, then open the file at [ui.perfetto.dev](https://ui.perfetto.dev/) using **Open trace file**. Copy the file elsewhere before the next run if you want to keep it.
 
 The default level is `INFO`. Set `RUST_LOG` to filter both console output and the trace, for example:
 
 ```sh
-RUST_LOG=debug cargo run --locked
-RUST_LOG=reng=debug,winit=warn cargo run --locked
+RUST_LOG=debug npm run run-desktop
+RUST_LOG=reng=debug,winit=warn npm run run-desktop
 ```
 
 Invalid filter directives or an unwritable trace file fail startup with an error. Logs and spans cover application and event-loop startup/shutdown, window configuration and creation, resize callbacks (physical pixel dimensions), closing, GPU initialization, frame submission/presentation, and failures. Span fields are included in the trace, and a global subscriber collects events from all threads. Trace durations measure elapsed time in instrumented scopes, not GPU timings.
