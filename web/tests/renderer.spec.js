@@ -2,7 +2,7 @@ const path = require("node:path");
 const { test, expect } = require("@playwright/test");
 const screenshotOptions = { maxDiffPixels: 0, stylePath: path.join(__dirname, "screenshot.css") };
 
-test("clears the GPU canvas and redraws after resize and zero size", async ({ page }) => {
+test("draws a shaded triangle and redraws after resize and zero size", async ({ page }) => {
   const errors = [];
   const logs = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -15,14 +15,14 @@ test("clears the GPU canvas and redraws after resize and zero size", async ({ pa
   const canvas = page.getByLabel("reng game canvas");
   await expect.poll(() => logs.join("\n")).toContain("Renderer initialized");
   await expect.poll(() => logs.join("\n")).toContain("Frame presented");
-  await expect(canvas).toHaveScreenshot("background.png", screenshotOptions);
+  await expect(canvas).toHaveScreenshot("triangle.png", screenshotOptions);
 
   const frames = logs.filter((line) => line.includes("Frame presented")).length;
   await page.setViewportSize({ width: 640, height: 360 });
   await expect(canvas).toHaveAttribute("width", "640");
   await expect(canvas).toHaveAttribute("height", "360");
   await expect.poll(() => logs.filter((line) => line.includes("Frame presented")).length).toBeGreaterThan(frames);
-  await expect(canvas).toHaveScreenshot("background-resized.png", screenshotOptions);
+  await expect(canvas).toHaveScreenshot("triangle-resized.png", screenshotOptions);
 
   const beforeZero = logs.filter((line) => line.includes("Frame presented")).length;
   await canvas.evaluate((element) => { element.style.width = "0px"; element.style.height = "0px"; });
@@ -30,7 +30,7 @@ test("clears the GPU canvas and redraws after resize and zero size", async ({ pa
   await canvas.evaluate((element) => { element.style.width = "100%"; element.style.height = "100%"; });
   await expect(canvas).toHaveAttribute("width", "640");
   await expect.poll(() => logs.filter((line) => line.includes("Frame presented")).length).toBeGreaterThan(beforeZero);
-  await expect(canvas).toHaveScreenshot("background-resized.png", screenshotOptions);
+  await expect(canvas).toHaveScreenshot("triangle-resized.png", screenshotOptions);
   expect(errors).toEqual([]);
 });
 
