@@ -4,11 +4,11 @@ A game engine written in Rust, intended for macOS, Windows, and web through WebA
 
 ## Current milestone
 
-`reng` opens a resizable native window titled **reng**, initially 960 × 540 logical pixels, or a browser canvas that fills the viewport. [wgpu](https://docs.rs/wgpu/30.0.1/wgpu/) clears the background to a teal color on startup and redraws when resized or exposed. Closing the native window exits the application; the event loop sleeps while idle.
+`reng` opens a resizable native window titled **reng**, initially 960 × 540 logical pixels, or a browser canvas that fills the viewport. [wgpu](https://docs.rs/wgpu/30.0.1/wgpu/) draws a triangle with smoothly interpolated red, green, and blue vertex colors over a teal background on startup and redraws when resized or exposed. Closing the native window exits the application; the event loop sleeps while idle.
 
 Window management uses [winit](https://docs.rs/winit/0.30.13/winit/). Rendering uses Metal on macOS, DirectX 12 on Windows, and WebGPU in the browser. Browser GPU startup is asynchronous. Resize events configure the surface in physical pixels; zero dimensions skip configuration and drawing. Outdated or lost surfaces are reconfigured or recreated, and temporary acquisition timeouts retry. GPU initialization, validation, or device-loss failures are reported; device loss currently requires restarting the app.
 
-`main.rs` passes `WindowSpecs::default()` and `Scene::default()` to `WindowHandler`. Window specs live in `src/window/specs.rs`, lifecycle logic in `src/window/handler.rs`, and GPU operations in `src/renderer/gpu.rs`. **Edit the background color in `src/scene/data.rs`**: `Scene` holds linear RGBA data consumed by the renderer. Geometry, vertex positions, and colors must also stay in scene data when triangle drawing is added; this milestone only clears the background.
+`main.rs` passes `WindowSpecs::default()` and `Scene::default()` to `WindowHandler`. Window specs live in `src/window/specs.rs`, lifecycle logic in `src/window/handler.rs`, and GPU operations in `src/renderer/gpu.rs`. **Edit the background color and triangle vertices in `src/scene/data.rs`**: each vertex contains a clip-space XYZ position followed by a linear RGB color. The renderer uploads these three vertices on each redraw. `src/renderer/triangle.wgsl` passes the positions through and outputs the interpolated colors; this is vertex-color shading without lighting. Positions are relative to the viewport, so resizing can stretch the triangle; camera transforms and aspect correction are not implemented yet.
 
 ## Code layout
 
@@ -27,7 +27,8 @@ src/
 │   └── data.rs
 ├── renderer/
 │   ├── mod.rs
-│   └── gpu.rs
+│   ├── gpu.rs
+│   └── triangle.wgsl
 ├── telemetry/
 │   ├── mod.rs
 │   ├── native.rs
@@ -155,11 +156,9 @@ If engine code later requires unstable features, pin a dated toolchain such as `
 
 ## Rendering proof of concept
 
-The background clear was verified on macOS using the M1 Max Metal adapter, including zoom/restore resizing at Retina resolution and clean window closure. It also ran through WebGPU in the Codex browser on macOS with no warnings or errors. Chromium software WebGPU tests compare the rendered image at two sizes and after zero-size recovery. The npm web launcher also opened Safari on macOS and rendered the background successfully. Windows and Firefox runtime rendering remain unverified.
+The shaded triangle was verified on macOS with Metal, including zoom/restore resizing at Retina resolution and clean window closure. It also rendered in Chromium 154 on macOS using a non-fallback Apple `metal-3` WebGPU adapter, including viewport resizing, with no console warnings or errors. Automated Chromium software WebGPU tests compare the triangle at 960 × 540 and 640 × 360 and after zero-size recovery. Windows, Safari, and Firefox triangle rendering remain unverified; surface-loss recovery was not forced during these checks.
 
-![GPU background clear on macOS](docs/screenshots/reng-renderer-macos.png)
-
-![WebGPU background clear in the browser](docs/screenshots/reng-renderer-web.jpg)
+![Shaded triangle rendered by Chromium software WebGPU](web/tests/snapshots/triangle.png)
 
 See [AGENTS.md](AGENTS.md) for project conventions and validation commands.
 
@@ -169,8 +168,7 @@ Add each dependency when its feature needs it. Some proposed crates already arri
 
 | Next feature | Planned additions | When to add them |
 | --- | --- | --- |
-| Triangle drawing | WGSL shaders | Draw the same colored triangle on macOS, Windows, and web; keep vertex and color data in `src/scene/`, outside the renderer. `wgpu`, native `pollster`, and web `wasm-bindgen-futures` are already in use. |
-| Vertex and uniform buffers | `bytemuck` | When passing typed Rust data to GPU buffers. |
+| Typed vertex and uniform buffers | Potentially `bytemuck` | When structured GPU data needs typed byte casts; the current triangle packs its floats with the standard library. |
 | Camera and transforms | `glam` | When the first scene needs vector and matrix math. |
 | Frame loop and input | A shared frame clock, potentially `web-time` | When continuous updates replace the current idle event loop; add keyboard and pointer handling then. |
 | Renderer errors | `thiserror` | When callers need to distinguish recoverable rendering failures. |

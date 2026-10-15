@@ -18,6 +18,8 @@ pub(crate) struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
+    pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
     size: PhysicalSize<u32>,
     device_error: Arc<Mutex<Option<String>>>,
 }
@@ -65,6 +67,13 @@ impl Renderer {
             }));
             let size = window.inner_size();
             let config = surface_config(&surface, &adapter, size)?;
+            let pipeline = triangle_pipeline(&device, config.format.add_srgb_suffix());
+            let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("triangle vertices"),
+                size: size_of::<[[f32; 6]; 3]>() as wgpu::BufferAddress,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
             let info = adapter.get_info();
             tracing::info!(adapter = %info.name, backend = ?info.backend, "Renderer initialized");
             let mut renderer = Self {
@@ -75,6 +84,8 @@ impl Renderer {
                 device,
                 queue,
                 config,
+                pipeline,
+                vertex_buffer,
                 size,
                 device_error,
             };
@@ -125,6 +136,8 @@ impl Renderer {
                 tracing::warn!("Surface lost; recreating it");
                 self.surface = self.instance.create_surface(self.window.clone())?;
                 self.config = surface_config(&self.surface, &self.adapter, self.size)?;
+                self.pipeline =
+                    triangle_pipeline(&self.device, self.config.format.add_srgb_suffix());
                 self.resize(self.window.inner_size());
                 self.window.request_redraw();
                 return Ok(());
@@ -143,14 +156,22 @@ impl Renderer {
             format: Some(self.config.format.add_srgb_suffix()),
             ..Default::default()
         });
+        let vertex_bytes: Vec<u8> = scene
+            .triangle
+            .iter()
+            .flatten()
+            .flat_map(|value| value.to_ne_bytes())
+            .collect();
+        self.queue
+            .write_buffer(&self.vertex_buffer, 0, &vertex_bytes);
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("reng frame"),
             });
         {
-            let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("clear background"),
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("draw scene"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
                     depth_slice: None,
@@ -162,6 +183,9 @@ impl Renderer {
                 })],
                 ..Default::default()
             });
+            pass.set_pipeline(&self.pipeline);
+            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            pass.draw(0..3, 0..1);
         }
         self.queue.submit([encoder.finish()]);
         self.window.pre_present_notify();
@@ -173,6 +197,42 @@ impl Renderer {
         }
         Ok(())
     }
+}
+
+fn triangle_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::RenderPipeline {
+    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("triangle shader"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("triangle.wgsl").into()),
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("triangle pipeline"),
+        layout: None,
+        vertex: wgpu::VertexState {
+            module: &shader,
+            entry_point: Some("vs_main"),
+            compilation_options: Default::default(),
+            buffers: &[Some(wgpu::VertexBufferLayout {
+                array_stride: size_of::<[f32; 6]>() as wgpu::BufferAddress,
+                step_mode: wgpu::VertexStepMode::Vertex,
+                attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3],
+            })],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &shader,
+            entry_point: Some("fs_main"),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState {
+                format,
+                blend: None,
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview_mask: None,
+        cache: None,
+    })
 }
 
 fn surface_config(
