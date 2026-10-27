@@ -138,7 +138,7 @@ npm audit
 
 `deny.toml` checks Rust advisories, approved dependency licenses, versions, and sources for our native and web targets. It rejects known vulnerabilities, yanked versions, and unmaintained direct dependencies. Transitive duplicates produce warnings; transitive maintenance advisories are left to upstream dependency updates. The existing repository license remains in `LICENSE`.
 
-GitHub Actions currently runs formatting, WebAssembly Clippy/build checks, and Chromium tests on Linux. macOS and Windows CI builds are deferred to keep CI costs low; run native checks locally when changing native code. Dependency checks run on PRs, main, and weekly; Dependabot proposes weekly Cargo, npm, and GitHub Actions updates. These jobs verify compilation and browser behavior; native GUI and GPU checks still require running the app on the target platform.
+GitHub Actions currently runs native Rust tests, formatting, WebAssembly Clippy/build checks, and Chromium tests on Linux. The separate `Rust tests` job runs `cargo test --locked` using the pinned toolchain on every PR and push to `main`. Require this check in GitHub branch protection or a ruleset to block merging when Rust tests fail. macOS and Windows CI builds are deferred to keep CI costs low; run native checks locally when changing native code. Dependency checks run on PRs, main, and weekly; Dependabot proposes weekly Cargo, npm, and GitHub Actions updates. These jobs verify compilation, Rust test behavior, and browser behavior; native GUI and GPU checks still require running the app on the target platform.
 
 ## Potential nightly uses
 

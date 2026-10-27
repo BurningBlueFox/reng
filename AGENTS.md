@@ -87,7 +87,7 @@ For dependency changes, run `cargo deny --locked check` and `npm audit`; install
 
 ## Verification and documentation
 
-- CI currently checks the web target on Linux, plus dependency audits. macOS and Windows CI builds are deferred to limit costs; run native checks locally for native changes.
+- CI currently runs native Rust tests and checks the web target on Linux, plus dependency audits. The `Rust tests` job runs `cargo test --locked`; GitHub branch protection or a ruleset must require it to block merging on test failures. macOS and Windows CI builds are deferred to limit costs; run native checks locally for native changes.
 
 - Add focused behavioral tests for nontrivial logic changes. Documentation-only changes need a diff and link review, not new tests.
 - Smoke-test rendering changes on an actual GPU, including resizing and closing the window. For web changes, also run the demo in a browser.
