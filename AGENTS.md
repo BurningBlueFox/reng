@@ -24,6 +24,7 @@ Codex enables the official plugin through `.codex/config.toml`. See README.md fo
 
 - Shared Codex MCP configuration lives in `.codex/config.toml`; see README.md for prerequisites.
 - Use `rust_analyzer` for semantic Rust navigation and diagnostics. Continue to use Cargo, Clippy, and tests for build validation.
+- Before using unfamiliar dependency APIs (for example `wgpu` or `winit`), run `cargo agents crate-info <crate>` from [Symposium](https://symposium.dev/) to locate the source of the version this workspace resolves, then read it rather than relying on memory. Skip this if `cargo-agents` is not installed; see README.md.
 - Use `playwright` for browser inspection, screenshots, and coordinate-based canvas input. Automatically named output goes under `target/playwright-mcp/`. It controls an isolated Chrome session; native windows use the available computer-use tools.
 - Browser inspection alone does not establish GPU or platform compatibility; follow the rendering verification guidance below.
 
