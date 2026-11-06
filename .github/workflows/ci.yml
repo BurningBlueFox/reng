@@ -10,6 +10,14 @@ permissions:
   contents: read
 
 jobs:
+  rust-tests:
+    name: Rust tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - run: rustup show
+      - run: cargo test --locked
+
   web:
     name: Web (Chromium)
     runs-on: ubuntu-latest
@@ -26,6 +34,7 @@ jobs:
       - run: cargo clippy --lib --locked --target wasm32-unknown-unknown -- -D warnings
       - run: cargo install wasm-bindgen-cli --version 0.2.129 --locked
       - run: npm ci
+      - run: npm run test:launcher
       - run: npm run build:web
       - run: npx playwright install --with-deps chromium
       - run: sudo apt-get update && sudo apt-get install -y xvfb xauth libvulkan1 mesa-vulkan-drivers

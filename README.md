@@ -4,11 +4,11 @@ A game engine written in Rust, intended for macOS, Windows, and web through WebA
 
 ## Current milestone
 
-`reng` opens a resizable native window titled **reng**, initially 960 × 540 logical pixels, or a browser canvas that fills the viewport. [wgpu](https://docs.rs/wgpu/30.0.1/wgpu/) clears the background to a teal color on startup and redraws when resized or exposed. Closing the native window exits the application; the event loop sleeps while idle.
+`reng` opens a resizable native window titled **reng**, initially 960 × 540 logical pixels, or a browser canvas that fills the viewport. [wgpu](https://docs.rs/wgpu/30.0.1/wgpu/) draws a triangle with smoothly interpolated red, green, and blue vertex colors over a teal background on startup and redraws when resized or exposed. Closing the native window exits the application; the event loop sleeps while idle.
 
 Window management uses [winit](https://docs.rs/winit/0.30.13/winit/). Rendering uses Metal on macOS, DirectX 12 on Windows, and WebGPU in the browser. Browser GPU startup is asynchronous. Resize events configure the surface in physical pixels; zero dimensions skip configuration and drawing. Outdated or lost surfaces are reconfigured or recreated, and temporary acquisition timeouts retry. GPU initialization, validation, or device-loss failures are reported; device loss currently requires restarting the app.
 
-`main.rs` passes `WindowSpecs::default()` and `Scene::default()` to `WindowHandler`. Window specs live in `src/window/specs.rs`, lifecycle logic in `src/window/handler.rs`, and GPU operations in `src/renderer/gpu.rs`. **Edit the background color in `src/scene/data.rs`**: `Scene` holds linear RGBA data consumed by the renderer. Geometry, vertex positions, and colors must also stay in scene data when triangle drawing is added; this milestone only clears the background.
+`main.rs` passes `WindowSpecs::default()` and `Scene::default()` to `WindowHandler`. Window specs live in `src/window/specs.rs`, lifecycle logic in `src/window/handler.rs`, and GPU operations in `src/renderer/gpu.rs`. **Edit the background color and triangle vertices in `src/scene/data.rs`**: each vertex contains a clip-space XYZ position followed by a linear RGB color. The renderer uploads these three vertices on each redraw. `src/renderer/triangle.wgsl` passes the positions through and outputs the interpolated colors; this is vertex-color shading without lighting. Positions are relative to the viewport, so resizing can stretch the triangle; camera transforms and aspect correction are not implemented yet.
 
 ## Code layout
 
@@ -27,7 +27,8 @@ src/
 │   └── data.rs
 ├── renderer/
 │   ├── mod.rs
-│   └── gpu.rs
+│   ├── gpu.rs
+│   └── triangle.wgsl
 ├── telemetry/
 │   ├── mod.rs
 │   ├── native.rs
@@ -37,55 +38,57 @@ src/
     └── mod.rs
 web/
 ├── index.html
+├── serve.py
 └── tests/
     ├── window.spec.js
-    └── renderer.spec.js
+    ├── renderer.spec.js
+    └── test_serve.py
 ```
 
 `lib.rs` exports the `window`, `scene`, and `telemetry` modules. The renderer is internal to the engine. Each subsystem's `mod.rs` keeps implementation modules private and exports its public entry points. `main.rs` explicitly initializes telemetry, keeps the trace guard alive through shutdown, and runs the window. Telemetry selects native or browser output at compile time; window code only emits logs and spans.
 
 Tests always live in dedicated files, with unit tests declared from a module using `mod tests;` under the appropriate `cfg` and integration tests under `tests/`. Test bodies, helpers, and fixtures never share production implementation files.
 
-## Run
+## Run on desktop (debug)
 
-Install [Rust through rustup](https://rustup.rs/). `rust-toolchain.toml` pins Rust 1.99.0, rustfmt, Clippy, rust-analyzer, and the WebAssembly target; rustup installs them automatically when a Cargo command runs here:
+Install [Rust through rustup](https://rustup.rs/) and Node.js 24 LTS. `rust-toolchain.toml` pins Rust 1.99.0, rustfmt, Clippy, rust-analyzer, and the WebAssembly target; rustup installs them automatically on the first build. Launch the desktop debug build with:
 
 ```sh
-cargo run --locked
+npm run desktop
 ```
 
 Drag a window edge or corner to resize it, then use the native close button to exit.
 
-## Run in a browser
+## Run in a browser (debug)
 
-Install Make, Node.js 24 LTS, and Python 3, then install the build and test tools:
+Install Python 3, then install the browser build and test tools:
 
 ```sh
 cargo install wasm-bindgen-cli --version 0.2.129 --locked
 npm ci
 ```
 
-Build and serve the browser demo with:
+Build, serve, and open the browser demo with:
 
 ```sh
-make run-web
+npm run web
 ```
 
-This runs the existing `npm run build:web` and `npm run serve:web` scripts in sequence.
+This builds the WebAssembly debug bundle with `npm run build:web`, then starts the local server and opens your default browser once the server is listening. `npm run serve:web` serves an existing build without opening a browser. Both launch commands use Cargo's default debug profile.
 
-Open [localhost:18080](http://localhost:18080) in a browser with WebGPU enabled and a supported GPU. WebGPU requires a secure context; localhost is allowed, deployed builds need HTTPS. There is no WebGL fallback. Stop the local server with Ctrl+C. `web/pkg/` contains generated JavaScript and WebAssembly and is ignored by Git; rebuild it after Rust changes. The `wasm-bindgen` CLI and Rust dependency must use the same version, so update both the manifest and CI install command together.
+The demo runs at [localhost:18080](http://localhost:18080). Your default browser needs WebGPU enabled and a supported GPU; if it cannot be opened automatically, the terminal prints the URL to open manually. WebGPU requires a secure context; localhost is allowed, deployed builds need HTTPS. There is no WebGL fallback. Stop the local server with Ctrl+C. `web/pkg/` contains generated JavaScript and WebAssembly and is ignored by Git; rebuild it after Rust changes. The `wasm-bindgen` CLI and Rust dependency must use the same version, so update both the manifest and CI install command together.
 
 `src/web/mod.rs` is the WebAssembly startup entry point. It installs panic diagnostics, initializes telemetry, and starts the shared window handler using winit's nonblocking browser event loop. CSS controls canvas size; winit reports physical pixel resize events, and the renderer updates the canvas drawing buffer. The loading message remains until GPU initialization completes. Startup and rendering failures appear on the page and in the console.
 
 ## Logging and traces
 
-Native runs print leveled, structured logs to stdout and overwrite `trace.json` in the current working directory. Running `cargo run --locked` from this repository writes the file here; Git ignores it. Close the window normally to finish and flush the capture, then open the file at [ui.perfetto.dev](https://ui.perfetto.dev/) using **Open trace file**. Copy the file elsewhere before the next run if you want to keep it.
+Native runs print leveled, structured logs to stdout and overwrite `trace.json` in the current working directory. Running `npm run desktop` from this repository writes the file here; Git ignores it. Close the window normally to finish and flush the capture, then open the file at [ui.perfetto.dev](https://ui.perfetto.dev/) using **Open trace file**. Copy the file elsewhere before the next run if you want to keep it.
 
 The default level is `INFO`. Set `RUST_LOG` to filter both console output and the trace, for example:
 
 ```sh
-RUST_LOG=debug cargo run --locked
-RUST_LOG=reng=debug,winit=warn cargo run --locked
+RUST_LOG=debug npm run desktop
+RUST_LOG=reng=debug,winit=warn npm run desktop
 ```
 
 Invalid filter directives or an unwritable trace file fail startup with an error. Logs and spans cover application and event-loop startup/shutdown, window configuration and creation, resize callbacks (physical pixel dimensions), closing, GPU initialization, frame submission/presentation, and failures. Span fields are included in the trace, and a global subscriber collects events from all threads. Trace durations measure elapsed time in instrumented scopes, not GPU timings.
@@ -119,6 +122,7 @@ For browser changes:
 cargo clippy --lib --locked --target wasm32-unknown-unknown -- -D warnings
 npm run build:web
 npx playwright install chromium
+npm run test:launcher
 npm run test:web
 ```
 
@@ -134,7 +138,7 @@ npm audit
 
 `deny.toml` checks Rust advisories, approved dependency licenses, versions, and sources for our native and web targets. It rejects known vulnerabilities, yanked versions, and unmaintained direct dependencies. Transitive duplicates produce warnings; transitive maintenance advisories are left to upstream dependency updates. The existing repository license remains in `LICENSE`.
 
-GitHub Actions currently runs formatting, WebAssembly Clippy/build checks, and Chromium tests on Linux. macOS and Windows CI builds are deferred to keep CI costs low; run native checks locally when changing native code. Dependency checks run on PRs, main, and weekly; Dependabot proposes weekly Cargo, npm, and GitHub Actions updates. These jobs verify compilation and browser behavior; native GUI and GPU checks still require running the app on the target platform.
+GitHub Actions currently runs native Rust tests, formatting, WebAssembly Clippy/build checks, and Chromium tests on Linux. The separate `Rust tests` job runs `cargo test --locked` using the pinned toolchain on every PR and push to `main`. Require this check in GitHub branch protection or a ruleset to block merging when Rust tests fail. macOS and Windows CI builds are deferred to keep CI costs low; run native checks locally when changing native code. Dependency checks run on PRs, main, and weekly; Dependabot proposes weekly Cargo, npm, and GitHub Actions updates. These jobs verify compilation, Rust test behavior, and browser behavior; native GUI and GPU checks still require running the app on the target platform.
 
 ## Potential nightly uses
 
@@ -152,11 +156,9 @@ If engine code later requires unstable features, pin a dated toolchain such as `
 
 ## Rendering proof of concept
 
-The background clear was verified on macOS using the M1 Max Metal adapter, including zoom/restore resizing at Retina resolution and clean window closure. It also ran through WebGPU in the Codex browser on macOS with no warnings or errors. Chromium software WebGPU tests compare the rendered image at two sizes and after zero-size recovery. Windows, Safari, and Firefox runtime rendering remain unverified.
+The shaded triangle was verified on macOS with Metal, including zoom/restore resizing at Retina resolution and clean window closure. It also rendered in Chromium 154 on macOS using a non-fallback Apple `metal-3` WebGPU adapter, including viewport resizing, with no console warnings or errors. Automated Chromium software WebGPU tests compare the triangle at 960 × 540 and 640 × 360 and after zero-size recovery. Windows, Safari, and Firefox triangle rendering remain unverified; surface-loss recovery was not forced during these checks.
 
-![GPU background clear on macOS](docs/screenshots/reng-renderer-macos.png)
-
-![WebGPU background clear in the browser](docs/screenshots/reng-renderer-web.jpg)
+![Shaded triangle rendered by Chromium software WebGPU](web/tests/snapshots/triangle.png)
 
 See [AGENTS.md](AGENTS.md) for project conventions and validation commands.
 
@@ -166,8 +168,7 @@ Add each dependency when its feature needs it. Some proposed crates already arri
 
 | Next feature | Planned additions | When to add them |
 | --- | --- | --- |
-| Triangle drawing | WGSL shaders | Draw the same colored triangle on macOS, Windows, and web; keep vertex and color data in `src/scene/`, outside the renderer. `wgpu`, native `pollster`, and web `wasm-bindgen-futures` are already in use. |
-| Vertex and uniform buffers | `bytemuck` | When passing typed Rust data to GPU buffers. |
+| Typed vertex and uniform buffers | Potentially `bytemuck` | When structured GPU data needs typed byte casts; the current triangle packs its floats with the standard library. |
 | Camera and transforms | `glam` | When the first scene needs vector and matrix math. |
 | Frame loop and input | A shared frame clock, potentially `web-time` | When continuous updates replace the current idle event loop; add keyboard and pointer handling then. |
 | Renderer errors | `thiserror` | When callers need to distinguish recoverable rendering failures. |
@@ -175,7 +176,7 @@ Add each dependency when its feature needs it. Some proposed crates already arri
 | Remote telemetry | OpenTelemetry and an exporter | When we need a collector or shared analysis beyond local console and Perfetto captures. |
 | Engine systems | Assets, ECS, audio, physics, editor | After the rendering and input milestones, driven by a small playable example. No libraries selected yet. |
 
-Verify the renderer on real macOS and Windows GPUs and in browsers before claiming platform support. WebGPU is the initial browser rendering target; a WebGL2 fallback needs a separate decision and its own tests. Safari and Firefox runtime coverage can be added as the browser path grows.
+Verify the renderer on real macOS and Windows GPUs and in browsers before claiming platform support. WebGPU is the initial browser rendering target; a WebGL2 fallback needs a separate decision and its own tests. Additional Safari and Firefox automated coverage can be added as the browser path grows.
 
 ## Agent tooling
 

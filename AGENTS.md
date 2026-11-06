@@ -5,8 +5,8 @@
 - `reng` is a Rust game engine in its initial scaffold stage.
 - Intended platforms: macOS, Windows, and web through WebAssembly (`wasm32-unknown-unknown`).
 - Current stack: `winit` for windows, input events, and application lifecycle; `wgpu` for rendering; `tracing` for events and spans.
-- The repository has one Cargo package with a reusable library in `src/lib.rs` and a thin executable in `src/main.rs`. Resizable native windows, a resizable browser canvas, tracing, and a GPU background clear are implemented.
-- The next rendering milestone is the same colored triangle running in a native window and a browser canvas.
+- The repository has one Cargo package with a reusable library in `src/lib.rs` and a thin executable in `src/main.rs`. Resizable native windows, a resizable browser canvas, tracing, and a triangle with interpolated vertex colors over a GPU background clear are implemented.
+- The same triangle renderer is shared by the native window and browser canvas. Camera transforms and continuous updates remain planned.
 
 ## Ponytail
 
@@ -32,7 +32,8 @@ Codex enables the official plugin through `.codex/config.toml`. See README.md fo
 Use the Rust 1.99.0 toolchain pinned in `rust-toolchain.toml`. Run commands from the repository root:
 
 ```sh
-cargo run --locked
+npm run desktop
+npm run web
 cargo build --locked
 ```
 
@@ -51,10 +52,11 @@ cargo clippy --lib --locked --target wasm32-unknown-unknown -- -D warnings
 npm ci
 npm run build:web
 npx playwright install chromium
+npm run test:launcher
 npm run test:web
 ```
 
-Install `wasm-bindgen-cli` 0.2.129 with `cargo install wasm-bindgen-cli --version 0.2.129 --locked`; it must match the Rust dependency. Node.js 24 and Python 3 are required for the web commands. `make run-web` builds and serves the browser demo on localhost:18080 using the existing npm scripts; `npm run serve:web` serves an already generated build. Keep browser tests in `web/tests/`, separate from production code. On Linux, install `xvfb xauth libvulkan1 mesa-vulkan-drivers` and run `xvfb-run -a npm run test:web`; Chromium needs a virtual display for reliable WebGPU screenshots.
+Install `wasm-bindgen-cli` 0.2.129 with `cargo install wasm-bindgen-cli --version 0.2.129 --locked`; it must match the Rust dependency. Node.js 24 is required for the npm interface; Python 3 is also required for the web commands. Use `npm run desktop` for the native debug build and `npm run web` to build and serve the browser debug bundle on localhost:18080 and automatically open the default browser once the server is listening; `npm run serve:web` serves an already generated build without opening a browser. Keep browser tests in `web/tests/`, separate from production code. On Linux, install `xvfb xauth libvulkan1 mesa-vulkan-drivers` and run `xvfb-run -a npm run test:web`; Chromium needs a virtual display for reliable WebGPU screenshots.
 
 For dependency changes, run `cargo deny --locked check` and `npm audit`; install `cargo-deny` 0.20.2 if needed. Keep the manifest, lockfiles, tool versions, and CI in sync. Review advisory or license failures rather than broadly suppressing them.
 
@@ -70,7 +72,7 @@ For dependency changes, run `cargo deny --locked check` and `npm audit`; install
 ## Code and test structure
 
 - Put reusable engine code in `src/lib.rs` modules; keep `src/main.rs` responsible for application startup, explicit telemetry initialization and guard lifetime, and running the window.
-- Use subsystem directories such as `src/window/` and `src/telemetry/`, with `mod.rs` declaring private implementation modules and re-exporting the minimal public API. Window configuration lives in `specs.rs`, lifecycle in `handler.rs`, and platform-specific telemetry in `native.rs` and `web.rs` selected with `cfg`. GPU operations live in `src/renderer/`; all scene data, including background colors and future triangle vertices/colors, live in `src/scene/`, outside the renderer. The renderer consumes scene data rather than defining it. Browser startup lives in `src/web/mod.rs`; the static browser host lives under `web/`.
+- Use subsystem directories such as `src/window/` and `src/telemetry/`, with `mod.rs` declaring private implementation modules and re-exporting the minimal public API. Window configuration lives in `specs.rs`, lifecycle in `handler.rs`, and platform-specific telemetry in `native.rs` and `web.rs` selected with `cfg`. GPU operations and WGSL shaders live in `src/renderer/`; all scene data, including background colors and triangle vertices/colors, live in `src/scene/`, outside the renderer. The renderer consumes scene data rather than defining it. Browser startup lives in `src/web/mod.rs`; the static browser host lives under `web/`.
 - Window code emits events and spans through `tracing`; it must not initialize the global subscriber or choose output destinations.
 - Tests must always live in dedicated files, never alongside production implementation. Put unit tests in files such as `src/telemetry/tests.rs`, declared using `#[cfg(test)] mod tests;` (with additional platform conditions when needed), and integration tests under `tests/`.
 - All test bodies, test helpers, fixtures, and test assertions belong in those dedicated test files. Never place an inline test module or test code inside an implementation file.
@@ -85,7 +87,7 @@ For dependency changes, run `cargo deny --locked check` and `npm audit`; install
 
 ## Verification and documentation
 
-- CI currently checks the web target on Linux, plus dependency audits. macOS and Windows CI builds are deferred to limit costs; run native checks locally for native changes.
+- CI currently runs native Rust tests and checks the web target on Linux, plus dependency audits. The `Rust tests` job runs `cargo test --locked`; GitHub branch protection or a ruleset must require it to block merging on test failures. macOS and Windows CI builds are deferred to limit costs; run native checks locally for native changes.
 
 - Add focused behavioral tests for nontrivial logic changes. Documentation-only changes need a diff and link review, not new tests.
 - Smoke-test rendering changes on an actual GPU, including resizing and closing the window. For web changes, also run the demo in a browser.
