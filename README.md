@@ -209,4 +209,6 @@ cargo install rust-analyzer-mcp --version 0.4.0 --locked
 
 Ensure `rust-analyzer` and `rust-analyzer-mcp` are on `PATH`. Open this repository as a trusted Codex project, then restart Codex or start a new chat to load the servers. Use `/mcp` to check their connection status. If project servers are absent, check project trust and project configuration loading before changing the shared configuration. See [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp).
 
+[Symposium](https://symposium.dev/) is an optional tool that agents use to find the exact source of a dependency version through `cargo agents crate-info <crate>`. Install it with `cargo install symposium --version 0.5.1 --locked`. The project uses only `crate-info`, so `cargo agents init` and its hooks are not required.
+
 [Context7](https://github.com/upstash/context7) is an optional documentation tool for current Rust library APIs. Connect it through your agent environment; it is not required to build the project and is not bundled in the shared MCP configuration. No additional MCP servers are needed for the current milestone.
