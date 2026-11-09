@@ -6,7 +6,7 @@
 - Intended platforms: macOS, Windows, and web through WebAssembly (`wasm32-unknown-unknown`).
 - Current stack: `winit` for windows, input events, and application lifecycle; `wgpu` for rendering; `tracing` for events and spans.
 - The repository has one Cargo package with a reusable library in `src/lib.rs` and a thin executable in `src/main.rs`. Resizable native windows, a resizable browser canvas, tracing, and a triangle with interpolated vertex colors over a GPU background clear are implemented.
-- The same triangle renderer is shared by the native window and browser canvas. Camera transforms and continuous updates remain planned.
+- The same triangle renderer is shared by the native window and browser canvas. Frames redraw continuously while visible; a frame clock in `src/time/` drives a small gradient-midpoint animation. Camera transforms and input remain planned.
 
 ## Ponytail
 

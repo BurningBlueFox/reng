@@ -12,7 +12,7 @@ use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys};
 use winit::window::{Window, WindowId};
 
 use super::WindowSpecs;
-use crate::{renderer::Renderer, scene::Scene};
+use crate::{renderer::Renderer, scene::Scene, time::FrameClock};
 
 type RendererReady = Result<Renderer, Box<dyn Error + Send + Sync>>;
 
@@ -21,6 +21,8 @@ pub struct WindowHandler {
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
     scene: Scene,
+    clock: FrameClock,
+    occluded: bool,
     #[cfg(target_arch = "wasm32")]
     proxy: Option<EventLoopProxy<RendererReady>>,
     startup_error: Option<Box<dyn Error + Send + Sync>>,
@@ -40,6 +42,8 @@ impl WindowHandler {
             window: None,
             renderer: None,
             scene,
+            clock: FrameClock::default(),
+            occluded: false,
             #[cfg(target_arch = "wasm32")]
             proxy: None,
             startup_error: None,
@@ -157,13 +161,33 @@ impl ApplicationHandler<RendererReady> for WindowHandler {
                 window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                if let Some(renderer) = &mut self.renderer
-                    && let Err(error) = renderer.render(&self.scene)
-                {
+                let Some(renderer) = &mut self.renderer else {
+                    return;
+                };
+                let time = self.clock.tick(web_time::Instant::now());
+                let _span = tracing::debug_span!(
+                    "frame",
+                    delta_ms = time.delta.as_secs_f64() * 1000.0,
+                    total_s = time.total.as_secs_f64()
+                )
+                .entered();
+                self.scene.update(time.total);
+                if let Err(error) = renderer.render(&self.scene) {
                     self.fail(event_loop, error);
+                    return;
+                }
+                // Keep animating while visible; resize and exposure events restart frames.
+                let size = window.inner_size();
+                if !self.occluded && size.width > 0 && size.height > 0 {
+                    window.request_redraw();
                 }
             }
-            WindowEvent::Occluded(false) => window.request_redraw(),
+            WindowEvent::Occluded(occluded) => {
+                self.occluded = occluded;
+                if !occluded {
+                    window.request_redraw();
+                }
+            }
             WindowEvent::CloseRequested => {
                 let _span = tracing::info_span!("close_window", ?window_id).entered();
                 tracing::info!("Window close requested");

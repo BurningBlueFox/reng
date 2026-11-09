@@ -4,11 +4,11 @@ A game engine written in Rust, intended for macOS, Windows, and web through WebA
 
 ## Current milestone
 
-`reng` opens a resizable native window titled **reng**, initially 960 × 540 logical pixels, or a browser canvas that fills the viewport. [wgpu](https://docs.rs/wgpu/30.0.1/wgpu/) draws a triangle with smoothly interpolated red, green, and blue vertex colors over a teal background on startup and redraws when resized or exposed. Closing the native window exits the application; the event loop sleeps while idle.
+`reng` opens a resizable native window titled **reng**, initially 960 × 540 logical pixels, or a browser canvas that fills the viewport. [wgpu](https://docs.rs/wgpu/30.0.1/wgpu/) draws a triangle with smoothly interpolated red, green, and blue vertex colors over a teal background. The gradient midpoint, where the three colors mix evenly, drifts in a small loop every 4 seconds. Frames redraw continuously while the window is visible and has a nonzero size, paced by the display (vsync natively, `requestAnimationFrame` in the browser); resize and exposure events restart drawing. Closing the native window exits the application.
 
 Window management uses [winit](https://docs.rs/winit/0.30.13/winit/). Rendering uses Metal on macOS, DirectX 12 on Windows, and WebGPU in the browser. Browser GPU startup is asynchronous. Resize events configure the surface in physical pixels; zero dimensions skip configuration and drawing. Outdated or lost surfaces are reconfigured or recreated, and temporary acquisition timeouts retry. GPU initialization, validation, or device-loss failures are reported; device loss currently requires restarting the app.
 
-`main.rs` passes `WindowSpecs::default()` and `Scene::default()` to `WindowHandler`. Window specs live in `src/window/specs.rs`, lifecycle logic in `src/window/handler.rs`, and GPU operations in `src/renderer/gpu.rs`. **Edit the background color and triangle vertices in `src/scene/data.rs`**: each vertex contains a clip-space XYZ position followed by a linear RGB color. The renderer uploads these three vertices on each redraw. `src/renderer/triangle.wgsl` passes the positions through and outputs the interpolated colors; this is vertex-color shading without lighting. Positions are relative to the viewport, so resizing can stretch the triangle; camera transforms and aspect correction are not implemented yet.
+`main.rs` passes `WindowSpecs::default()` and `Scene::default()` to `WindowHandler`. Window specs live in `src/window/specs.rs`, lifecycle logic in `src/window/handler.rs`, and GPU operations in `src/renderer/gpu.rs`. **Edit the background color, triangle corners, and gradient animation in `src/scene/data.rs`**: each corner contains a clip-space XYZ position followed by a linear RGB color. Each frame, `src/time/` measures the time since the previous frame and since the first frame using `web-time` (which uses `performance.now()` in the browser), and `Scene::update` moves the gradient midpoint from the total time. The scene splits the triangle into three triangles that meet at the midpoint, which carries the average corner color, and the renderer uploads these nine vertices on each redraw. `src/renderer/triangle.wgsl` passes the positions through and outputs the interpolated colors; this is vertex-color shading without lighting. Positions are relative to the viewport, so resizing can stretch the triangle; camera transforms and aspect correction are not implemented yet.
 
 ## Code layout
 
@@ -24,7 +24,12 @@ src/
 │   └── handler.rs
 ├── scene/
 │   ├── mod.rs
-│   └── data.rs
+│   ├── data.rs
+│   └── tests.rs
+├── time/
+│   ├── mod.rs
+│   ├── clock.rs
+│   └── tests.rs
 ├── renderer/
 │   ├── mod.rs
 │   ├── gpu.rs
@@ -91,7 +96,7 @@ RUST_LOG=debug npm run desktop
 RUST_LOG=reng=debug,winit=warn npm run desktop
 ```
 
-Invalid filter directives or an unwritable trace file fail startup with an error. Logs and spans cover application and event-loop startup/shutdown, window configuration and creation, resize callbacks (physical pixel dimensions), closing, GPU initialization, frame submission/presentation, and failures. Span fields are included in the trace, and a global subscriber collects events from all threads. Trace durations measure elapsed time in instrumented scopes, not GPU timings.
+Invalid filter directives or an unwritable trace file fail startup with an error. Logs and spans cover application and event-loop startup/shutdown, window configuration and creation, resize callbacks (physical pixel dimensions), closing, GPU initialization, the first frame presented after each surface configuration, and failures. Per-frame `frame` and `render_frame` spans (with frame delta and total time) and every `Frame presented` event are recorded at `DEBUG`; enable them with `RUST_LOG=reng=debug`. Span fields are included in the trace, and a global subscriber collects events from all threads. Trace durations measure elapsed time in instrumented scopes, not GPU timings.
 
 The trace writer flushes when the application returns, including returned errors. Forced termination can leave an incomplete file. Run one instance per working directory so concurrent runs do not overwrite the same capture.
 
@@ -156,7 +161,7 @@ If engine code later requires unstable features, pin a dated toolchain such as `
 
 ## Rendering proof of concept
 
-The shaded triangle was verified on macOS with Metal, including zoom/restore resizing at Retina resolution and clean window closure. It also rendered in Chromium 154 on macOS using a non-fallback Apple `metal-3` WebGPU adapter, including viewport resizing, with no console warnings or errors. Automated Chromium software WebGPU tests compare the triangle at 960 × 540 and 640 × 360 and after zero-size recovery. Windows, Safari, and Firefox triangle rendering remain unverified; surface-loss recovery was not forced during these checks.
+The shaded triangle was verified on macOS with Metal, including zoom/restore resizing at Retina resolution and clean window closure. It also rendered in Chromium 154 on macOS using a non-fallback Apple `metal-3` WebGPU adapter, including viewport resizing, with no console warnings or errors. Automated Chromium software WebGPU tests freeze page time with Playwright's clock, then compare the triangle with a low per-pixel color tolerance at 960 × 540 and 640 × 360 and after zero-size recovery, each at a whole number of gradient loops, and check that the gradient moves within a loop. The continuous gradient animation was smoke-tested natively only on Linux with Mesa's software Vulkan (a local build with wgpu's `vulkan` feature, which the project does not enable), including resizing; macOS and browser runs on real GPUs are unverified. Windows, Safari, and Firefox triangle rendering remain unverified; surface-loss recovery was not forced during these checks.
 
 ![Shaded triangle rendered by Chromium software WebGPU](web/tests/snapshots/triangle.png)
 
@@ -170,7 +175,7 @@ Add each dependency when its feature needs it. Some proposed crates already arri
 | --- | --- | --- |
 | Typed vertex and uniform buffers | Potentially `bytemuck` | When structured GPU data needs typed byte casts; the current triangle packs its floats with the standard library. |
 | Camera and transforms | `glam` | When the first scene needs vector and matrix math. |
-| Frame loop and input | A shared frame clock, potentially `web-time` | When continuous updates replace the current idle event loop; add keyboard and pointer handling then. |
+| Input | Keyboard and pointer state on top of the frame loop | When the scene needs interaction. |
 | Renderer errors | `thiserror` | When callers need to distinguish recoverable rendering failures. |
 | GPU profiling | Potentially `wgpu-profiler` | When GPU work exists; current tracing measures CPU scopes only. |
 | Remote telemetry | OpenTelemetry and an exporter | When we need a collector or shared analysis beyond local console and Perfetto captures. |
