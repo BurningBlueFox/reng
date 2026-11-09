@@ -12,7 +12,10 @@ use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys};
 use winit::window::{Window, WindowId};
 
 use super::WindowSpecs;
-use crate::{renderer::Renderer, scene::Scene};
+use crate::{
+    renderer::Renderer,
+    scene::{FrameClock, Scene},
+};
 
 type RendererReady = Result<Renderer, Box<dyn Error + Send + Sync>>;
 
@@ -21,6 +24,7 @@ pub struct WindowHandler {
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
     scene: Scene,
+    clock: FrameClock,
     #[cfg(target_arch = "wasm32")]
     proxy: Option<EventLoopProxy<RendererReady>>,
     startup_error: Option<Box<dyn Error + Send + Sync>>,
@@ -40,6 +44,7 @@ impl WindowHandler {
             window: None,
             renderer: None,
             scene,
+            clock: FrameClock::new(web_time::Instant::now()),
             #[cfg(target_arch = "wasm32")]
             proxy: None,
             startup_error: None,
@@ -157,10 +162,11 @@ impl ApplicationHandler<RendererReady> for WindowHandler {
                 window.request_redraw();
             }
             WindowEvent::RedrawRequested => {
-                if let Some(renderer) = &mut self.renderer
-                    && let Err(error) = renderer.render(&self.scene)
-                {
-                    self.fail(event_loop, error);
+                if let Some(renderer) = &mut self.renderer {
+                    self.scene.debug_labels = self.clock.tick(web_time::Instant::now());
+                    if let Err(error) = renderer.render(&self.scene) {
+                        self.fail(event_loop, error);
+                    }
                 }
             }
             WindowEvent::Occluded(false) => window.request_redraw(),

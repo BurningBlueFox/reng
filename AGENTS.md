@@ -5,8 +5,8 @@
 - `reng` is a Rust game engine in its initial scaffold stage.
 - Intended platforms: macOS, Windows, and web through WebAssembly (`wasm32-unknown-unknown`).
 - Current stack: `winit` for windows, input events, and application lifecycle; `wgpu` for rendering; `tracing` for events and spans.
-- The repository has one Cargo package with a reusable library in `src/lib.rs` and a thin executable in `src/main.rs`. Resizable native windows, a resizable browser canvas, tracing, and a triangle with interpolated vertex colors over a GPU background clear are implemented.
-- The same triangle renderer is shared by the native window and browser canvas. Camera transforms and continuous updates remain planned.
+- The repository has one Cargo package with a reusable library in `src/lib.rs` and a thin executable in `src/main.rs`. Resizable native windows, a resizable browser canvas, tracing, a triangle with interpolated vertex colors over a GPU background clear, and a continuous frame loop with frame-time and elapsed-time debug labels are implemented.
+- The same triangle renderer is shared by the native window and browser canvas. Camera transforms and input remain planned.
 
 ## Ponytail
 

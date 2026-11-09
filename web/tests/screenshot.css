@@ -1,2 +1,4 @@
 /* Exclude the browser focus ring from GPU pixel checks. */
 canvas { outline: none !important; }
+/* Cover the live frame-time labels with the scene background so snapshots stay stable. */
+body::after { content: ""; position: fixed; top: 0; right: 0; width: 220px; height: 44px; background: rgb(97 144 162); }

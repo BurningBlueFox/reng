@@ -3,6 +3,8 @@ pub struct Scene {
     pub background: wgpu::Color,
     /// Three vertices containing clip-space XYZ positions followed by RGB colors.
     pub triangle: [[f32; 6]; 3],
+    /// Text lines drawn in the top-right corner. Supports digits, `.`, spaces, and the letters in `src/renderer/text.rs`.
+    pub debug_labels: Vec<String>,
 }
 
 impl Default for Scene {
@@ -19,6 +21,7 @@ impl Default for Scene {
                 [-0.6, -0.6, 0.0, 0.0, 1.0, 0.0],
                 [0.6, -0.6, 0.0, 0.0, 0.0, 1.0],
             ],
+            debug_labels: Vec::new(),
         }
     }
 }
