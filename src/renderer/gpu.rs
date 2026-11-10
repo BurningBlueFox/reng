@@ -4,8 +4,10 @@ use std::{
 };
 
 use tracing::Instrument;
+use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
+use super::text::label_vertices;
 use crate::scene::Scene;
 
 type RenderResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
@@ -19,7 +21,6 @@ pub(crate) struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
     size: PhysicalSize<u32>,
     device_error: Arc<Mutex<Option<String>>>,
 }
@@ -68,12 +69,6 @@ impl Renderer {
             let size = window.inner_size();
             let config = surface_config(&surface, &adapter, size)?;
             let pipeline = triangle_pipeline(&device, config.format.add_srgb_suffix());
-            let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("triangle vertices"),
-                size: size_of::<[[f32; 6]; 3]>() as wgpu::BufferAddress,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
             let info = adapter.get_info();
             tracing::info!(adapter = %info.name, backend = ?info.backend, "Renderer initialized");
             let mut renderer = Self {
@@ -85,7 +80,6 @@ impl Renderer {
                 queue,
                 config,
                 pipeline,
-                vertex_buffer,
                 size,
                 device_error,
             };
@@ -112,7 +106,7 @@ impl Renderer {
     }
 
     pub(crate) fn render(&mut self, scene: &Scene) -> RenderResult<()> {
-        let _span = tracing::info_span!("render_frame").entered();
+        let _span = tracing::debug_span!("render_frame").entered();
         if let Some(error) = self
             .device_error
             .lock()
@@ -156,14 +150,27 @@ impl Renderer {
             format: Some(self.config.format.add_srgb_suffix()),
             ..Default::default()
         });
-        let vertex_bytes: Vec<u8> = scene
-            .triangle
+        let pixel = (2.0 * self.window.scale_factor() as f32).round();
+        let labels = label_vertices(
+            &scene.debug_labels,
+            self.size.width as f32,
+            self.size.height as f32,
+            pixel,
+        );
+        let vertices: Vec<[f32; 6]> = scene.triangle.iter().copied().chain(labels).collect();
+        let vertex_bytes: Vec<u8> = vertices
             .iter()
             .flatten()
             .flat_map(|value| value.to_ne_bytes())
             .collect();
-        self.queue
-            .write_buffer(&self.vertex_buffer, 0, &vertex_bytes);
+        // ponytail: a new vertex buffer per frame; reuse a growable buffer if uploads show up in profiles.
+        let vertex_buffer = self
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("scene vertices"),
+                contents: &vertex_bytes,
+                usage: wgpu::BufferUsages::VERTEX,
+            });
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
@@ -184,17 +191,18 @@ impl Renderer {
                 ..Default::default()
             });
             pass.set_pipeline(&self.pipeline);
-            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            pass.draw(0..3, 0..1);
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            pass.draw(0..vertices.len() as u32, 0..1);
         }
         self.queue.submit([encoder.finish()]);
         self.window.pre_present_notify();
         self.queue.present(frame);
-        tracing::info!("Frame presented");
+        tracing::debug!("Frame presented");
         if suboptimal {
             self.resize(self.window.inner_size());
-            self.window.request_redraw();
         }
+        // Draw continuously while frames are presented; occlusion and zero size pause the loop.
+        self.window.request_redraw();
         Ok(())
     }
 }

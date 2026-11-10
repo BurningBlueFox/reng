@@ -4,11 +4,11 @@ A game engine written in Rust, intended for macOS, Windows, and web through WebA
 
 ## Current milestone
 
-`reng` opens a resizable native window titled **reng**, initially 960 × 540 logical pixels, or a browser canvas that fills the viewport. [wgpu](https://docs.rs/wgpu/30.0.1/wgpu/) draws a triangle with smoothly interpolated red, green, and blue vertex colors over a teal background on startup and redraws when resized or exposed. Closing the native window exits the application; the event loop sleeps while idle.
+`reng` opens a resizable native window titled **reng**, initially 960 × 540 logical pixels, or a browser canvas that fills the viewport. [wgpu](https://docs.rs/wgpu/30.0.1/wgpu/) draws a triangle with smoothly interpolated red, green, and blue vertex colors over a teal background, with white frame-time and elapsed-time debug labels in the top-right corner. It redraws continuously at the display's presentation rate while visible and pauses while the window is occluded or has zero size. Closing the native window exits the application.
 
 Window management uses [winit](https://docs.rs/winit/0.30.13/winit/). Rendering uses Metal on macOS, DirectX 12 on Windows, and WebGPU in the browser. Browser GPU startup is asynchronous. Resize events configure the surface in physical pixels; zero dimensions skip configuration and drawing. Outdated or lost surfaces are reconfigured or recreated, and temporary acquisition timeouts retry. GPU initialization, validation, or device-loss failures are reported; device loss currently requires restarting the app.
 
-`main.rs` passes `WindowSpecs::default()` and `Scene::default()` to `WindowHandler`. Window specs live in `src/window/specs.rs`, lifecycle logic in `src/window/handler.rs`, and GPU operations in `src/renderer/gpu.rs`. **Edit the background color and triangle vertices in `src/scene/data.rs`**: each vertex contains a clip-space XYZ position followed by a linear RGB color. The renderer uploads these three vertices on each redraw. `src/renderer/triangle.wgsl` passes the positions through and outputs the interpolated colors; this is vertex-color shading without lighting. Positions are relative to the viewport, so resizing can stretch the triangle; camera transforms and aspect correction are not implemented yet.
+`main.rs` passes `WindowSpecs::default()` and `Scene::default()` to `WindowHandler`. Window specs live in `src/window/specs.rs`, lifecycle logic in `src/window/handler.rs`, and GPU operations in `src/renderer/gpu.rs`. **Edit the background color and triangle vertices in `src/scene/data.rs`**: each vertex contains a clip-space XYZ position followed by a linear RGB color. The renderer uploads these three vertices on each redraw. `src/scene/clock.rs` measures frame and elapsed time with `web-time`, and `WindowHandler` stores the formatted labels in `Scene::debug_labels`; `src/renderer/text.rs` draws them with a built-in 5×7 bitmap font as white quads through the triangle pipeline. `src/renderer/triangle.wgsl` passes the positions through and outputs the interpolated colors; this is vertex-color shading without lighting. Positions are relative to the viewport, so resizing can stretch the triangle; camera transforms and aspect correction are not implemented yet.
 
 ## Code layout
 
@@ -24,10 +24,14 @@ src/
 │   └── handler.rs
 ├── scene/
 │   ├── mod.rs
-│   └── data.rs
+│   ├── clock.rs
+│   ├── data.rs
+│   └── tests.rs
 ├── renderer/
 │   ├── mod.rs
 │   ├── gpu.rs
+│   ├── text.rs
+│   ├── tests.rs
 │   └── triangle.wgsl
 ├── telemetry/
 │   ├── mod.rs
@@ -170,7 +174,7 @@ Add each dependency when its feature needs it. Some proposed crates already arri
 | --- | --- | --- |
 | Typed vertex and uniform buffers | Potentially `bytemuck` | When structured GPU data needs typed byte casts; the current triangle packs its floats with the standard library. |
 | Camera and transforms | `glam` | When the first scene needs vector and matrix math. |
-| Frame loop and input | A shared frame clock, potentially `web-time` | When continuous updates replace the current idle event loop; add keyboard and pointer handling then. |
+| Input | Keyboard and pointer handling | When the first interactive example needs it; the continuous frame loop and `web-time` frame clock already exist. |
 | Renderer errors | `thiserror` | When callers need to distinguish recoverable rendering failures. |
 | GPU profiling | Potentially `wgpu-profiler` | When GPU work exists; current tracing measures CPU scopes only. |
 | Remote telemetry | OpenTelemetry and an exporter | When we need a collector or shared analysis beyond local console and Perfetto captures. |
