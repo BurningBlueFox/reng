@@ -4,11 +4,11 @@ A game engine written in Rust, intended for macOS, Windows, and web through WebA
 
 ## Current milestone
 
-`reng` opens a resizable native window titled **reng**, initially 960 × 540 logical pixels, or a browser canvas that fills the viewport. [wgpu](https://docs.rs/wgpu/30.0.1/wgpu/) draws a triangle with smoothly interpolated red, green, and blue vertex colors over a teal background, with white frame-time and elapsed-time debug labels in the top-right corner. It redraws continuously at the display's presentation rate while visible and pauses while the window is occluded or has zero size. Closing the native window exits the application.
+`reng` opens a resizable native window titled **reng**, initially 960 × 540 logical pixels, or a browser canvas that fills the viewport. [wgpu](https://docs.rs/wgpu/30.0.1/wgpu/) draws a depth-tested cube with one color per face, turning about its vertical axis at 1 radian per second in front of a fixed perspective camera, over a teal background, with white frame-time and elapsed-time debug labels in the top-right corner. It redraws continuously at the display's presentation rate while visible and pauses while the window is occluded or has zero size. Closing the native window exits the application.
 
 Window management uses [winit](https://docs.rs/winit/0.30.13/winit/). Rendering uses Metal on macOS, DirectX 12 on Windows, and WebGPU in the browser. Browser GPU startup is asynchronous. Resize events configure the surface in physical pixels; zero dimensions skip configuration and drawing. Outdated or lost surfaces are reconfigured or recreated, and temporary acquisition timeouts retry. GPU initialization, validation, or device-loss failures are reported; device loss currently requires restarting the app.
 
-`main.rs` passes `WindowSpecs::default()` and `Scene::default()` to `WindowHandler`. Window specs live in `src/window/specs.rs`, lifecycle logic in `src/window/handler.rs`, and GPU operations in `src/renderer/gpu.rs`. **Edit the background color and triangle vertices in `src/scene/data.rs`**: each vertex contains a clip-space XYZ position followed by a linear RGB color. The renderer uploads these three vertices on each redraw. `src/scene/clock.rs` measures frame and elapsed time with `web-time`, and `WindowHandler` stores the formatted labels in `Scene::debug_labels`; `src/renderer/text.rs` draws them with a built-in 5×7 bitmap font as white quads through the triangle pipeline. `src/renderer/triangle.wgsl` passes the positions through and outputs the interpolated colors; this is vertex-color shading without lighting. Positions are relative to the viewport, so resizing can stretch the triangle; camera transforms and aspect correction are not implemented yet.
+`main.rs` passes `WindowSpecs::default()` and `Scene::default()` to `WindowHandler`. Window specs live in `src/window/specs.rs`, lifecycle logic in `src/window/handler.rs`, and GPU operations in `src/renderer/gpu.rs`. **Edit the background color, camera `view`, and `meshes` in `src/scene/data.rs`**. Each `Mesh` lists its triangles as three vertices each, without indices; a vertex contains a model-space XYZ position followed by a linear RGB color, and front faces wind counter-clockwise when seen from outside. Each mesh also has a [glam](https://docs.rs/glam/0.34.3/glam/) `Mat4` model transform. `src/scene/clock.rs` measures frame and elapsed time with `web-time`; on each redraw `WindowHandler` stores the formatted labels in `Scene::debug_labels` and calls `Scene::animate` with the elapsed time, which replaces the first mesh's transform with a rotation about +Y, so a transform set on it in `data.rs` has no effect. The renderer transforms every vertex to clip space on the CPU, appends the debug labels at depth 0, uploads one vertex buffer, and draws it once with a `Depth32Float` depth test and no back-face culling. `src/renderer/text.rs` draws the labels with a built-in 5×7 bitmap font as white quads. `src/renderer/triangle.wgsl` passes the clip positions through and outputs the interpolated colors; this is vertex-color shading without lighting. The projection uses the surface aspect ratio with a fixed vertical field of view, so resizing does not stretch the scene; the camera does not move yet.
 
 ## Code layout
 
@@ -130,7 +130,7 @@ npm run test:launcher
 npm run test:web
 ```
 
-The Playwright tests run a local server and check startup, timing spans, viewport resizing, physical resize events, actual background pixels, zero-size recovery, and visible module-loading, unavailable WebGPU, or asynchronous GPU validation failures. They keep test code under `web/tests/` and use Chromium's software WebGPU adapter. macOS runs headless; Linux runs under Xvfb with Vulkan/Mesa (`sudo apt-get install xvfb xauth libvulkan1 mesa-vulkan-drivers`, then `xvfb-run -a npm run test:web`). This [Linux configuration](https://github.com/vercel-labs/vgpu/issues/109) avoids blank WebGPU screenshots in headless mode; this is a rendering regression check, while hardware and browser compatibility still need runtime verification.
+The Playwright tests run a local server and check startup, timing spans, viewport resizing, physical resize events, actual scene pixels, zero-size recovery, and visible module-loading, unavailable WebGPU, or asynchronous GPU validation failures. The renderer test freezes the engine clock by replacing `performance.now()` from an init script; it compares the cube and labels at 960 × 540, then one second later at 640 × 480 and after zero-size recovery, and checks that the cube moves when the frozen clock advances. They keep test code under `web/tests/` and use Chromium's software WebGPU adapter. macOS runs headless; Linux runs under Xvfb with Vulkan/Mesa (`sudo apt-get install xvfb xauth libvulkan1 mesa-vulkan-drivers`, then `xvfb-run -a npm run test:web`). This [Linux configuration](https://github.com/vercel-labs/vgpu/issues/109) avoids blank WebGPU screenshots in headless mode; this is a rendering regression check, while hardware and browser compatibility still need runtime verification.
 
 For dependencies:
 
@@ -160,9 +160,9 @@ If engine code later requires unstable features, pin a dated toolchain such as `
 
 ## Rendering proof of concept
 
-The shaded triangle was verified on macOS with Metal, including zoom/restore resizing at Retina resolution and clean window closure. It also rendered in Chromium 154 on macOS using a non-fallback Apple `metal-3` WebGPU adapter, including viewport resizing, with no console warnings or errors. Automated Chromium software WebGPU tests compare the triangle at 960 × 540 and 640 × 360 and after zero-size recovery. Windows, Safari, and Firefox triangle rendering remain unverified; surface-loss recovery was not forced during these checks.
+The spinning cube was verified on macOS with Metal (Apple M1 Max) at Retina resolution, including very wide and very tall window sizes without stretching and clean window closure. It also rendered in Chrome 157 on macOS using a non-fallback Apple `metal-3` WebGPU adapter, including viewport resizing, with no console warnings or errors. Automated Chromium software WebGPU tests compare the cube at 960 × 540 and 640 × 480 and after zero-size recovery. Windows, Safari, and Firefox rendering remain unverified; surface-loss recovery was not forced during these checks.
 
-![Shaded triangle rendered by Chromium software WebGPU](web/tests/snapshots/triangle.png)
+![Cube rendered by Chromium software WebGPU](web/tests/snapshots/cube.png)
 
 See [AGENTS.md](AGENTS.md) for project conventions and validation commands.
 
@@ -172,8 +172,7 @@ Add each dependency when its feature needs it. Some proposed crates already arri
 
 | Next feature | Planned additions | When to add them |
 | --- | --- | --- |
-| Typed vertex and uniform buffers | Potentially `bytemuck` | When structured GPU data needs typed byte casts; the current triangle packs its floats with the standard library. |
-| Camera and transforms | `glam` | When the first scene needs vector and matrix math. |
+| Typed vertex and uniform buffers | Potentially `bytemuck` | When structured GPU data needs typed byte casts; the renderer currently packs vertex floats with the standard library. |
 | Input | Keyboard and pointer handling | When the first interactive example needs it; the continuous frame loop and `web-time` frame clock already exist. |
 | Renderer errors | `thiserror` | When callers need to distinguish recoverable rendering failures. |
 | GPU profiling | Potentially `wgpu-profiler` | When GPU work exists; current tracing measures CPU scopes only. |

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use web_time::Instant;
 
 /// Measures the time between frames and since the clock started.
@@ -18,10 +20,14 @@ impl FrameClock {
     pub fn tick(&mut self, now: Instant) -> Vec<String> {
         let frame = now.saturating_duration_since(self.last);
         self.last = now;
-        let elapsed = now.saturating_duration_since(self.start);
         vec![
             format!("FRAME {:.2} MS", frame.as_secs_f64() * 1000.0),
-            format!("ELAPSED {:.2} S", elapsed.as_secs_f64()),
+            format!("ELAPSED {:.2} S", self.elapsed().as_secs_f64()),
         ]
+    }
+
+    /// Time from the clock's start to its latest tick.
+    pub fn elapsed(&self) -> Duration {
+        self.last.saturating_duration_since(self.start)
     }
 }

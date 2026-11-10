@@ -16,6 +16,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 web-time = "1.1.0"
 winit = "0.30.13"
 wgpu = { version = "30.0.1", default-features = false, features = ["std", "parking_lot", "metal", "dx12", "wgsl", "webgpu"] }
+glam = { version = "0.34.3", default-features = false, features = ["std"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tracing-chrome = "0.7.2"
