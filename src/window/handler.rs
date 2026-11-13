@@ -164,6 +164,7 @@ impl ApplicationHandler<RendererReady> for WindowHandler {
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = &mut self.renderer {
                     self.scene.debug_labels = self.clock.tick(web_time::Instant::now());
+                    self.scene.animate(self.clock.elapsed());
                     if let Err(error) = renderer.render(&self.scene) {
                         self.fail(event_loop, error);
                     }

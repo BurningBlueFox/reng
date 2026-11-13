@@ -12,5 +12,6 @@ fn right_aligns_label_pixels_in_top_right_corner() {
     assert_eq!(xs.fold(f32::MIN, f32::max), 85.0 + 9.0);
     assert_eq!(ys.clone().fold(f32::MAX, f32::min), 4.0 + 5.0);
     assert_eq!(ys.fold(f32::MIN, f32::max), 4.0 + 7.0);
-    assert!(vertices.iter().all(|v| v[3..] == [1.0, 1.0, 1.0]));
+    // Depth 0, w = 1, white.
+    assert!(vertices.iter().all(|v| v[2..] == [0.0, 1.0, 1.0, 1.0, 1.0]));
 }

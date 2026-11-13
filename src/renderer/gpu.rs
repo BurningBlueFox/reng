@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use glam::Vec4;
 use tracing::Instrument;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
@@ -11,6 +12,11 @@ use super::text::label_vertices;
 use crate::scene::Scene;
 
 type RenderResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+
+const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+
+/// One vertex as `triangle.wgsl` reads it: clip-space XYZW, then linear RGB.
+pub(super) type Vertex = [f32; 7];
 
 pub(crate) struct Renderer {
     instance: wgpu::Instance,
@@ -21,6 +27,7 @@ pub(crate) struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
+    depth: wgpu::TextureView,
     size: PhysicalSize<u32>,
     device_error: Arc<Mutex<Option<String>>>,
 }
@@ -69,6 +76,7 @@ impl Renderer {
             let size = window.inner_size();
             let config = surface_config(&surface, &adapter, size)?;
             let pipeline = triangle_pipeline(&device, config.format.add_srgb_suffix());
+            let depth = depth_view(&device, &config);
             let info = adapter.get_info();
             tracing::info!(adapter = %info.name, backend = ?info.backend, "Renderer initialized");
             let mut renderer = Self {
@@ -80,6 +88,7 @@ impl Renderer {
                 queue,
                 config,
                 pipeline,
+                depth,
                 size,
                 device_error,
             };
@@ -98,6 +107,9 @@ impl Renderer {
         self.config.width = size.width;
         self.config.height = size.height;
         self.surface.configure(&self.device, &self.config);
+        // Free now: the web backend otherwise holds every resized depth texture until garbage collection.
+        self.depth.texture().destroy();
+        self.depth = depth_view(&self.device, &self.config);
         tracing::debug!(
             width = size.width,
             height = size.height,
@@ -151,19 +163,34 @@ impl Renderer {
             ..Default::default()
         });
         let pixel = (2.0 * self.window.scale_factor() as f32).round();
-        let labels = label_vertices(
-            &scene.debug_labels,
-            self.size.width as f32,
-            self.size.height as f32,
-            pixel,
-        );
-        let vertices: Vec<[f32; 6]> = scene.triangle.iter().copied().chain(labels).collect();
+        let (width, height) = (self.size.width as f32, self.size.height as f32);
+        let labels = label_vertices(&scene.debug_labels, width, height, pixel);
+        // Nonzero: zero-size surfaces returned above.
+        let view_projection = scene.view_projection(width / height);
+        // Keep clip-space w so the GPU clips at the near plane and interpolates perspective-correctly.
+        // ponytail: transforms every vertex on the CPU and uploads a new buffer each frame; move
+        // matrices to a uniform buffer with static per-mesh vertex buffers when meshes grow large.
+        let vertices: Vec<Vertex> = scene
+            .meshes
+            .iter()
+            .flat_map(|mesh| {
+                let clip_from_model = view_projection * mesh.transform;
+                mesh.triangles
+                    .as_flattened()
+                    .iter()
+                    .map(move |&[x, y, z, r, g, b]| {
+                        let [cx, cy, cz, cw] =
+                            (clip_from_model * Vec4::new(x, y, z, 1.0)).to_array();
+                        [cx, cy, cz, cw, r, g, b]
+                    })
+            })
+            .chain(labels)
+            .collect();
         let vertex_bytes: Vec<u8> = vertices
             .iter()
             .flatten()
             .flat_map(|value| value.to_ne_bytes())
             .collect();
-        // ponytail: a new vertex buffer per frame; reuse a growable buffer if uploads show up in profiles.
         let vertex_buffer = self
             .device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -188,11 +215,22 @@ impl Renderer {
                         store: wgpu::StoreOp::Store,
                     },
                 })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Discard,
+                    }),
+                    stencil_ops: None,
+                }),
                 ..Default::default()
             });
-            pass.set_pipeline(&self.pipeline);
-            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            pass.draw(0..vertices.len() as u32, 0..1);
+            // wgpu panics on an empty vertex slice; an empty scene still clears.
+            if !vertices.is_empty() {
+                pass.set_pipeline(&self.pipeline);
+                pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                pass.draw(0..vertices.len() as u32, 0..1);
+            }
         }
         self.queue.submit([encoder.finish()]);
         self.window.pre_present_notify();
@@ -220,9 +258,9 @@ fn triangle_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu
             entry_point: Some("vs_main"),
             compilation_options: Default::default(),
             buffers: &[Some(wgpu::VertexBufferLayout {
-                array_stride: size_of::<[f32; 6]>() as wgpu::BufferAddress,
+                array_stride: size_of::<Vertex>() as wgpu::BufferAddress,
                 step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3],
+                attributes: &wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x3],
             })],
         },
         fragment: Some(wgpu::FragmentState {
@@ -235,12 +273,39 @@ fn triangle_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu
                 write_mask: wgpu::ColorWrites::ALL,
             })],
         }),
+        // ponytail: no back-face culling; the depth test hides back faces. Cull `Face::Back` and wind
+        // the label quads counter-clockwise when fill rate matters.
         primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
+        depth_stencil: Some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(true),
+            depth_compare: Some(wgpu::CompareFunction::Less),
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        }),
         multisample: wgpu::MultisampleState::default(),
         multiview_mask: None,
         cache: None,
     })
+}
+
+fn depth_view(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> wgpu::TextureView {
+    device
+        .create_texture(&wgpu::TextureDescriptor {
+            label: Some("depth"),
+            size: wgpu::Extent3d {
+                width: config.width,
+                height: config.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: DEPTH_FORMAT,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[],
+        })
+        .create_view(&wgpu::TextureViewDescriptor::default())
 }
 
 fn surface_config(
