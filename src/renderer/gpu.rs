@@ -15,6 +15,9 @@ type RenderResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
+/// One vertex as `triangle.wgsl` reads it: clip-space XYZW, then linear RGB.
+pub(super) type Vertex = [f32; 7];
+
 pub(crate) struct Renderer {
     instance: wgpu::Instance,
     window: Arc<Window>,
@@ -167,7 +170,7 @@ impl Renderer {
         // Keep clip-space w so the GPU clips at the near plane and interpolates perspective-correctly.
         // ponytail: transforms every vertex on the CPU and uploads a new buffer each frame; move
         // matrices to a uniform buffer with static per-mesh vertex buffers when meshes grow large.
-        let vertices: Vec<[f32; 7]> = scene
+        let vertices: Vec<Vertex> = scene
             .meshes
             .iter()
             .flat_map(|mesh| {
@@ -255,7 +258,7 @@ fn triangle_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu
             entry_point: Some("vs_main"),
             compilation_options: Default::default(),
             buffers: &[Some(wgpu::VertexBufferLayout {
-                array_stride: size_of::<[f32; 7]>() as wgpu::BufferAddress,
+                array_stride: size_of::<Vertex>() as wgpu::BufferAddress,
                 step_mode: wgpu::VertexStepMode::Vertex,
                 attributes: &wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x3],
             })],

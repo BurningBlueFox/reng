@@ -1,3 +1,5 @@
+use super::gpu::Vertex;
+
 /// 5×7 bitmap glyphs; each row's low five bits are pixels, most significant bit leftmost.
 fn glyph(c: char) -> [u8; 7] {
     match c {
@@ -67,12 +69,7 @@ fn glyph(c: char) -> [u8; 7] {
 /// `width`×`height` surface. They sit at depth 0, so they pass the depth test over every mesh.
 /// `pixel` is the size of one glyph pixel in physical pixels.
 // ponytail: one quad per glyph pixel; switch to a glyph atlas when labels grow beyond debug text.
-pub(super) fn label_vertices(
-    lines: &[String],
-    width: f32,
-    height: f32,
-    pixel: f32,
-) -> Vec<[f32; 7]> {
+pub(super) fn label_vertices(lines: &[String], width: f32, height: f32, pixel: f32) -> Vec<Vertex> {
     let margin = 4.0 * pixel;
     let mut vertices = Vec::new();
     for (row, line) in lines.iter().enumerate() {
