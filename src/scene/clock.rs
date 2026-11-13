@@ -6,6 +6,7 @@ use web_time::Instant;
 pub struct FrameClock {
     start: Instant,
     last: Instant,
+    frame: Duration,
 }
 
 impl FrameClock {
@@ -13,17 +14,23 @@ impl FrameClock {
         Self {
             start: now,
             last: now,
+            frame: Duration::ZERO,
         }
     }
 
     /// Advances to `now` and returns the frame-time and elapsed-time debug labels.
     pub fn tick(&mut self, now: Instant) -> Vec<String> {
-        let frame = now.saturating_duration_since(self.last);
+        self.frame = now.saturating_duration_since(self.last);
         self.last = now;
         vec![
-            format!("FRAME {:.2} MS", frame.as_secs_f64() * 1000.0),
+            format!("FRAME {:.2} MS", self.frame.as_secs_f64() * 1000.0),
             format!("ELAPSED {:.2} S", self.elapsed().as_secs_f64()),
         ]
+    }
+
+    /// Time between the latest two ticks.
+    pub fn frame(&self) -> Duration {
+        self.frame
     }
 
     /// Time from the clock's start to its latest tick.

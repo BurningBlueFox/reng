@@ -4,11 +4,11 @@ A game engine written in Rust, intended for macOS, Windows, and web through WebA
 
 ## Current milestone
 
-`reng` opens a resizable native window titled **reng**, initially 960 × 540 logical pixels, or a browser canvas that fills the viewport. [wgpu](https://docs.rs/wgpu/30.0.1/wgpu/) draws a depth-tested cube with one color per face, turning about its vertical axis at 1 radian per second in front of a fixed perspective camera, over a teal background, with white frame-time and elapsed-time debug labels in the top-right corner. It redraws continuously at the display's presentation rate while visible and pauses while the window is occluded or has zero size. Closing the native window exits the application.
+`reng` opens a resizable native window titled **reng**, initially 960 × 540 logical pixels, or a browser canvas that fills the viewport. [wgpu](https://docs.rs/wgpu/30.0.1/wgpu/) draws a depth-tested cube with one color per face, turning about its vertical axis at 1 radian per second in front of a perspective camera, over a teal background, with white frame-time and elapsed-time debug labels in the top-right corner. The camera circles a target point; see [Camera controls](#camera-controls). It redraws continuously at the display's presentation rate while visible and pauses while the window is occluded or has zero size. Closing the native window exits the application.
 
 Window management uses [winit](https://docs.rs/winit/0.30.13/winit/). Rendering uses Metal on macOS, DirectX 12 on Windows, and WebGPU in the browser. Browser GPU startup is asynchronous. Resize events configure the surface in physical pixels; zero dimensions skip configuration and drawing. Outdated or lost surfaces are reconfigured or recreated, and temporary acquisition timeouts retry. GPU initialization, validation, or device-loss failures are reported; device loss currently requires restarting the app.
 
-`main.rs` passes `WindowSpecs::default()` and `Scene::default()` to `WindowHandler`. Window specs live in `src/window/specs.rs`, lifecycle logic in `src/window/handler.rs`, and GPU operations in `src/renderer/gpu.rs`. **Edit the background color, camera `view`, and `meshes` in `src/scene/data.rs`**. Each `Mesh` lists its triangles as three vertices each, without indices; a vertex contains a model-space XYZ position followed by a linear RGB color, and front faces wind counter-clockwise when seen from outside. Each mesh also has a [glam](https://docs.rs/glam/0.34.3/glam/) `Mat4` model transform. `src/scene/clock.rs` measures frame and elapsed time with `web-time`; on each redraw `WindowHandler` stores the formatted labels in `Scene::debug_labels` and calls `Scene::animate` with the elapsed time, which replaces the first mesh's transform with a rotation about +Y, so a transform set on it in `data.rs` has no effect. The renderer transforms every vertex to clip space on the CPU, appends the debug labels at depth 0, uploads one vertex buffer, and draws it once with a `Depth32Float` depth test and no back-face culling. `src/renderer/text.rs` draws the labels with a built-in 5×7 bitmap font as white quads. `src/renderer/triangle.wgsl` passes the clip positions through and outputs the interpolated colors; this is vertex-color shading without lighting. The projection uses the surface aspect ratio with a fixed vertical field of view, so resizing does not stretch the scene; the camera does not move yet.
+`main.rs` passes `WindowSpecs::default()` and `Scene::default()` to `WindowHandler`. Window specs live in `src/window/specs.rs`, lifecycle logic in `src/window/handler.rs`, and GPU operations in `src/renderer/gpu.rs`. **Edit the background color, `camera`, and `meshes` in `src/scene/data.rs`**. Each `Mesh` lists its triangles as three vertices each, without indices; a vertex contains a model-space XYZ position followed by a linear RGB color, and front faces wind counter-clockwise when seen from outside. Each mesh also has a [glam](https://docs.rs/glam/0.34.3/glam/) `Mat4` model transform. `src/scene/clock.rs` measures frame and elapsed time with `web-time`; on each redraw `WindowHandler` stores the formatted labels in `Scene::debug_labels` and calls `Scene::animate` with the elapsed time, which replaces the first mesh's transform with a rotation about +Y, so a transform set on it in `data.rs` has no effect. The renderer transforms every vertex to clip space on the CPU, appends the debug labels at depth 0, uploads one vertex buffer, and draws it once with a `Depth32Float` depth test and no back-face culling. `src/renderer/text.rs` draws the labels with a built-in 5×7 bitmap font as white quads. `src/renderer/triangle.wgsl` passes the clip positions through and outputs the interpolated colors; this is vertex-color shading without lighting. The projection uses the surface aspect ratio with a fixed vertical field of view, so resizing does not stretch the scene. `src/scene/camera.rs` defines the `OrbitCamera`: a target point, yaw, pitch, and distance, with pitch kept short of straight up or down and the distance kept between 1.5 and 50 units. `src/window/controls.rs` turns window input into camera moves, and `WindowHandler` applies held keys each frame using the frame time from `FrameClock`.
 
 ## Code layout
 
@@ -21,9 +21,12 @@ src/
 ├── window/
 │   ├── mod.rs
 │   ├── specs.rs
-│   └── handler.rs
+│   ├── handler.rs
+│   ├── controls.rs
+│   └── tests.rs
 ├── scene/
 │   ├── mod.rs
+│   ├── camera.rs
 │   ├── clock.rs
 │   ├── data.rs
 │   └── tests.rs
@@ -46,6 +49,8 @@ web/
 └── tests/
     ├── window.spec.js
     ├── renderer.spec.js
+    ├── controls.spec.js
+    ├── frozen-clock.js
     └── test_serve.py
 ```
 
@@ -62,6 +67,19 @@ npm run desktop
 ```
 
 Drag a window edge or corner to resize it, then use the native close button to exit.
+
+### Camera controls
+
+The same controls work in the native window and the browser canvas. Click the canvas first in a browser so it receives keys.
+
+| Input | Camera |
+| --- | --- |
+| Drag with the left mouse button or one finger | Circles the camera around the target, as if you were turning the scene by hand |
+| Scroll wheel, trackpad scroll or pinch, or two-finger pinch | Zooms toward or away from the target |
+| Hold W, A, S, or D | Moves the camera and its target forward, left, back, or right across the ground, 2 units per second |
+| Space | Returns the camera to its starting view |
+
+Keys follow their physical position, so the same keys work on AZERTY and other layouts. Held keys, drags, and touches are released when the window loses focus, and held keys also when Command is released, because macOS browsers drop key releases while Command is down. Space returns to the camera the scene started with. Browsers deliver a trackpad pinch as a Ctrl scroll, which zooms at the same rate as a native pinch once the canvas has been clicked; before that, the browser does not report Ctrl and a pinch zooms at scroll speed. Native trackpad pinch on Windows arrives as a scroll and zooms at scroll speed.
 
 ## Run in a browser (debug)
 
@@ -130,7 +148,7 @@ npm run test:launcher
 npm run test:web
 ```
 
-The Playwright tests run a local server and check startup, timing spans, viewport resizing, physical resize events, actual scene pixels, zero-size recovery, and visible module-loading, unavailable WebGPU, or asynchronous GPU validation failures. The renderer test freezes the engine clock by replacing `performance.now()` from an init script; it compares the cube and labels at 960 × 540, then one second later at 640 × 480 and after zero-size recovery, and checks that the cube moves when the frozen clock advances. They keep test code under `web/tests/` and use Chromium's software WebGPU adapter. macOS runs headless; Linux runs under Xvfb with Vulkan/Mesa (`sudo apt-get install xvfb xauth libvulkan1 mesa-vulkan-drivers`, then `xvfb-run -a npm run test:web`). This [Linux configuration](https://github.com/vercel-labs/vgpu/issues/109) avoids blank WebGPU screenshots in headless mode; this is a rendering regression check, while hardware and browser compatibility still need runtime verification.
+The Playwright tests run a local server and check startup, timing spans, viewport resizing, physical resize events, actual scene pixels, zero-size recovery, and visible module-loading, unavailable WebGPU, or asynchronous GPU validation failures. The renderer test freezes the engine clock by replacing `performance.now()` from an init script; it compares the cube and labels at 960 × 540, then one second later at 640 × 480 and after zero-size recovery, and checks that the cube moves when the frozen clock advances. The controls tests use the same frozen clock (`web/tests/frozen-clock.js`): they drag, scroll, hold W while the clock advances, and drag or pinch with touch points sent through the Chrome DevTools Protocol, then check that the camera moved. A touch pinch and a Ctrl scroll, which is how browsers deliver a trackpad pinch, must reach exactly the same closest view as scrolling all the way in. After the drag, scroll, and touch gestures, Space must restore the starting image exactly; after holding W, when the cube has also spun, Space must visibly move the camera back. They keep test code under `web/tests/` and use Chromium's software WebGPU adapter. macOS runs headless; Linux runs under Xvfb with Vulkan/Mesa (`sudo apt-get install xvfb xauth libvulkan1 mesa-vulkan-drivers`, then `xvfb-run -a npm run test:web`). This [Linux configuration](https://github.com/vercel-labs/vgpu/issues/109) avoids blank WebGPU screenshots in headless mode; this is a rendering regression check, while hardware and browser compatibility still need runtime verification.
 
 For dependencies:
 
@@ -160,7 +178,7 @@ If engine code later requires unstable features, pin a dated toolchain such as `
 
 ## Rendering proof of concept
 
-The spinning cube was verified on macOS with Metal (Apple M1 Max) at Retina resolution, including very wide and very tall window sizes without stretching and clean window closure. It also rendered in Chrome 157 on macOS using a non-fallback Apple `metal-3` WebGPU adapter, including viewport resizing, with no console warnings or errors. Automated Chromium software WebGPU tests compare the cube at 960 × 540 and 640 × 480 and after zero-size recovery. Windows, Safari, and Firefox rendering remain unverified; surface-loss recovery was not forced during these checks.
+The spinning cube was verified on macOS with Metal (Apple M1 Max) at Retina resolution, including very wide and very tall window sizes without stretching and clean window closure. It also rendered in Chrome 157 on macOS using a non-fallback Apple `metal-3` WebGPU adapter, including viewport resizing, with no console warnings or errors. Automated Chromium software WebGPU tests compare the cube at 960 × 540 and 640 × 480 and after zero-size recovery. In the same Chrome, mouse drag, scroll-wheel zoom, holding D, and Space each moved or reset the camera as described in [Camera controls](#camera-controls). Native camera input, trackpad pinch on macOS, and real touch screens have not been tried by hand yet. Windows, Safari, and Firefox rendering remain unverified; surface-loss recovery was not forced during these checks.
 
 ![Cube rendered by Chromium software WebGPU](web/tests/snapshots/cube.png)
 
@@ -173,7 +191,7 @@ Add each dependency when its feature needs it. Some proposed crates already arri
 | Next feature | Planned additions | When to add them |
 | --- | --- | --- |
 | Typed vertex and uniform buffers | Potentially `bytemuck` | When structured GPU data needs typed byte casts; the renderer currently packs vertex floats with the standard library. |
-| Input | Keyboard and pointer handling | When the first interactive example needs it; the continuous frame loop and `web-time` frame clock already exist. |
+| Input bindings | Rebindable keys, gamepads | When a game needs controls beyond the fixed camera keys. |
 | Renderer errors | `thiserror` | When callers need to distinguish recoverable rendering failures. |
 | GPU profiling | Potentially `wgpu-profiler` | When GPU work exists; current tracing measures CPU scopes only. |
 | Remote telemetry | OpenTelemetry and an exporter | When we need a collector or shared analysis beyond local console and Perfetto captures. |
