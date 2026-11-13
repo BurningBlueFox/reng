@@ -1,17 +1,20 @@
 use std::{error::Error, sync::Arc};
 
+use glam::Vec2;
 use winit::application::ApplicationHandler;
 #[cfg(not(target_arch = "wasm32"))]
 use winit::dpi::LogicalSize;
-use winit::event::WindowEvent;
+use winit::dpi::PhysicalPosition;
+use winit::event::{KeyEvent, MouseButton, Touch, WindowEvent};
 #[cfg(target_arch = "wasm32")]
 use winit::event_loop::EventLoopProxy;
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::keyboard::PhysicalKey;
 #[cfg(target_arch = "wasm32")]
 use winit::platform::web::{EventLoopExtWebSys, WindowAttributesExtWebSys};
 use winit::window::{Window, WindowId};
 
-use super::WindowSpecs;
+use super::{WindowSpecs, controls::CameraControls};
 use crate::{
     renderer::Renderer,
     scene::{FrameClock, Scene},
@@ -25,6 +28,7 @@ pub struct WindowHandler {
     renderer: Option<Renderer>,
     scene: Scene,
     clock: FrameClock,
+    controls: CameraControls,
     #[cfg(target_arch = "wasm32")]
     proxy: Option<EventLoopProxy<RendererReady>>,
     startup_error: Option<Box<dyn Error + Send + Sync>>,
@@ -43,6 +47,7 @@ impl WindowHandler {
             specs,
             window: None,
             renderer: None,
+            controls: CameraControls::new(scene.camera),
             scene,
             clock: FrameClock::new(web_time::Instant::now()),
             #[cfg(target_arch = "wasm32")]
@@ -164,6 +169,8 @@ impl ApplicationHandler<RendererReady> for WindowHandler {
             WindowEvent::RedrawRequested => {
                 if let Some(renderer) = &mut self.renderer {
                     self.scene.debug_labels = self.clock.tick(web_time::Instant::now());
+                    self.controls
+                        .update(self.clock.frame(), &mut self.scene.camera);
                     self.scene.animate(self.clock.elapsed());
                     if let Err(error) = renderer.render(&self.scene) {
                         self.fail(event_loop, error);
@@ -171,6 +178,52 @@ impl ApplicationHandler<RendererReady> for WindowHandler {
                 }
             }
             WindowEvent::Occluded(false) => window.request_redraw(),
+            // Windows also replays held keys as synthetic events on focus changes; ignoring them
+            // matches macOS and the web, and `Focused(false)` releases everything anyway.
+            WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        physical_key: PhysicalKey::Code(code),
+                        state,
+                        repeat,
+                        ..
+                    },
+                is_synthetic: false,
+                ..
+            } => self
+                .controls
+                .key(code, state.is_pressed(), repeat, &mut self.scene.camera),
+            WindowEvent::ModifiersChanged(modifiers) => {
+                self.controls.ctrl(modifiers.state().control_key())
+            }
+            WindowEvent::MouseInput {
+                state,
+                button: MouseButton::Left,
+                ..
+            } => self.controls.button(state.is_pressed()),
+            WindowEvent::CursorMoved { position, .. } => self.controls.cursor_moved(
+                logical(position, window.scale_factor()),
+                &mut self.scene.camera,
+            ),
+            WindowEvent::MouseWheel { delta, .. } => {
+                self.controls
+                    .scroll(delta, window.scale_factor(), &mut self.scene.camera)
+            }
+            WindowEvent::PinchGesture { delta, .. } => {
+                self.controls.pinch(delta as f32, &mut self.scene.camera)
+            }
+            WindowEvent::Touch(Touch {
+                id,
+                phase,
+                location,
+                ..
+            }) => self.controls.touch(
+                id,
+                phase,
+                logical(location, window.scale_factor()),
+                &mut self.scene.camera,
+            ),
+            WindowEvent::Focused(false) => self.controls.release(),
             WindowEvent::CloseRequested => {
                 let _span = tracing::info_span!("close_window", ?window_id).entered();
                 tracing::info!("Window close requested");
@@ -198,4 +251,9 @@ impl ApplicationHandler<RendererReady> for WindowHandler {
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {
         tracing::info!("Event loop exiting");
     }
+}
+
+fn logical(position: PhysicalPosition<f64>, scale_factor: f64) -> Vec2 {
+    let position = position.to_logical::<f32>(scale_factor);
+    Vec2::new(position.x, position.y)
 }

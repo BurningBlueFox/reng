@@ -1,18 +1,12 @@
 const path = require("node:path");
 const { test, expect } = require("@playwright/test");
+const { freezeClock } = require("./frozen-clock");
 const screenshotOptions = { maxDiffPixels: 0, stylePath: path.join(__dirname, "screenshot.css") };
 // The middle of the 960×540 canvas, away from the top-right debug labels.
 const cubeArea = { x: 280, y: 120, width: 400, height: 300 };
 
 test("draws a spinning cube and redraws after resize and zero size", async ({ page }) => {
-  // web-time, the engine clock, calls performance.now() on every Instant::now() through a dynamic
-  // method lookup, so replacing it freezes the animation and labels without test hooks in
-  // production code. page.clock would also fake requestAnimationFrame, which drives winit redraws.
-  await page.addInitScript(() => {
-    let now = 0;
-    performance.now = () => now;
-    window.rengSetTime = (milliseconds) => { now = milliseconds; };
-  });
+  await freezeClock(page);
   const errors = [];
   const logs = [];
   page.on("pageerror", (error) => errors.push(error.message));

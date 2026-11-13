@@ -1,9 +1,8 @@
 use std::{f64::consts::TAU, time::Duration};
 
-use glam::{
-    Mat4, Vec3,
-    camera::rh::{proj::directx, view::look_at_mat4},
-};
+use glam::{Mat4, Vec3, camera::rh::proj::directx};
+
+use super::OrbitCamera;
 
 /// Vertical field of view of the camera in radians.
 const FOV_Y: f32 = std::f32::consts::FRAC_PI_4;
@@ -13,8 +12,8 @@ const SPIN_SPEED: f64 = 1.0;
 /// Data consumed by the renderer. Color components are linear in 0..=1.
 pub struct Scene {
     pub background: wgpu::Color,
-    /// World-to-camera transform: right-handed, Y up, looking down -Z.
-    pub view: Mat4,
+    /// Where the scene is seen from. Window input moves it.
+    pub camera: OrbitCamera,
     /// Shapes drawn with a depth test. Each frame, `Scene::animate` replaces the first one's
     /// `transform` with a rotation about +Y.
     pub meshes: Vec<Mesh>,
@@ -38,7 +37,7 @@ impl Scene {
     /// Y up and depth 0..=1.
     pub(crate) fn view_projection(&self, aspect: f32) -> Mat4 {
         // ponytail: fixed field of view and depth range; make them fields when the camera needs others.
-        directx::perspective(FOV_Y, aspect, 0.1, 100.0) * self.view
+        directx::perspective(FOV_Y, aspect, 0.1, 100.0) * self.camera.view()
     }
 
     /// Turns the first mesh about +Y to its pose `elapsed` after start.
@@ -98,8 +97,7 @@ impl Default for Scene {
                 b: 0.36,
                 a: 1.0,
             },
-            // Above and to the right, so the +X, +Y and +Z faces show at the start.
-            view: look_at_mat4(Vec3::new(1.5, 1.5, 3.0), Vec3::ZERO, Vec3::Y),
+            camera: OrbitCamera::default(),
             meshes: vec![Mesh {
                 triangles: cube(),
                 transform: Mat4::IDENTITY,
