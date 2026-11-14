@@ -8,15 +8,15 @@ use tracing::Instrument;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
-use super::text::label_vertices;
+use super::{text::label_vertices, texture};
 use crate::scene::Scene;
 
-type RenderResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+pub(super) type RenderResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
-/// One vertex as `triangle.wgsl` reads it: clip-space XYZW, then linear RGB.
-pub(super) type Vertex = [f32; 7];
+/// One vertex as `triangle.wgsl` reads it: clip-space XYZW, linear RGB, then texture UV.
+pub(super) type Vertex = [f32; 9];
 
 pub(crate) struct Renderer {
     instance: wgpu::Instance,
@@ -27,13 +27,19 @@ pub(crate) struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     pipeline: wgpu::RenderPipeline,
+    texture_layout: wgpu::BindGroupLayout,
+    /// One bind group per `Scene::textures` entry, in order.
+    textures: Vec<wgpu::BindGroup>,
+    /// 1×1 white texture for untextured meshes and labels.
+    white: wgpu::BindGroup,
     depth: wgpu::TextureView,
     size: PhysicalSize<u32>,
     device_error: Arc<Mutex<Option<String>>>,
 }
 
 impl Renderer {
-    pub(crate) async fn new(window: Arc<Window>) -> RenderResult<Self> {
+    /// Starts rendering to `window` and uploads `textures`, the scene's PNG images.
+    pub(crate) async fn new(window: Arc<Window>, textures: &[&[u8]]) -> RenderResult<Self> {
         async {
             let instance = wgpu::Instance::default();
             let surface = instance.create_surface(window.clone())?;
@@ -75,7 +81,41 @@ impl Renderer {
             }));
             let size = window.inner_size();
             let config = surface_config(&surface, &adapter, size)?;
-            let pipeline = triangle_pipeline(&device, config.format.add_srgb_suffix());
+            let texture_layout = texture::bind_group_layout(&device);
+            let pipeline =
+                triangle_pipeline(&device, config.format.add_srgb_suffix(), &texture_layout);
+            let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+                label: Some("linear sampler"),
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            });
+            let white = texture::bind_group(
+                &device,
+                &queue,
+                &texture_layout,
+                &sampler,
+                (1, 1, &[255; 4]),
+            )?;
+            let textures = textures
+                .iter()
+                .enumerate()
+                .map(|(index, png)| {
+                    let (width, height, rgba) = texture::decode_png(png).map_err(|error| {
+                        format!(
+                            "Scene texture {index} is not a readable PNG ({error}); \
+                             if it is a Git LFS pointer, run `git lfs pull`"
+                        )
+                    })?;
+                    texture::bind_group(
+                        &device,
+                        &queue,
+                        &texture_layout,
+                        &sampler,
+                        (width, height, &rgba),
+                    )
+                })
+                .collect::<RenderResult<_>>()?;
             let depth = depth_view(&device, &config);
             let info = adapter.get_info();
             tracing::info!(adapter = %info.name, backend = ?info.backend, "Renderer initialized");
@@ -88,6 +128,9 @@ impl Renderer {
                 queue,
                 config,
                 pipeline,
+                texture_layout,
+                textures,
+                white,
                 depth,
                 size,
                 device_error,
@@ -142,8 +185,11 @@ impl Renderer {
                 tracing::warn!("Surface lost; recreating it");
                 self.surface = self.instance.create_surface(self.window.clone())?;
                 self.config = surface_config(&self.surface, &self.adapter, self.size)?;
-                self.pipeline =
-                    triangle_pipeline(&self.device, self.config.format.add_srgb_suffix());
+                self.pipeline = triangle_pipeline(
+                    &self.device,
+                    self.config.format.add_srgb_suffix(),
+                    &self.texture_layout,
+                );
                 self.resize(self.window.inner_size());
                 self.window.request_redraw();
                 return Ok(());
@@ -170,22 +216,30 @@ impl Renderer {
         // Keep clip-space w so the GPU clips at the near plane and interpolates perspective-correctly.
         // ponytail: transforms every vertex on the CPU and uploads a new buffer each frame; move
         // matrices to a uniform buffer with static per-mesh vertex buffers when meshes grow large.
-        let vertices: Vec<Vertex> = scene
-            .meshes
-            .iter()
-            .flat_map(|mesh| {
-                let clip_from_model = view_projection * mesh.transform;
-                mesh.triangles
-                    .as_flattened()
-                    .iter()
-                    .map(move |&[x, y, z, r, g, b]| {
-                        let [cx, cy, cz, cw] =
-                            (clip_from_model * Vec4::new(x, y, z, 1.0)).to_array();
-                        [cx, cy, cz, cw, r, g, b]
-                    })
-            })
-            .chain(labels)
-            .collect();
+        let mut vertices: Vec<Vertex> = Vec::new();
+        // Consecutive vertex ranges and the texture each one samples.
+        let mut draws = Vec::with_capacity(scene.meshes.len() + 1);
+        for mesh in &scene.meshes {
+            let texture = match mesh.texture {
+                Some(index) => self
+                    .textures
+                    .get(index)
+                    .ok_or_else(|| format!("Mesh uses missing scene texture {index}"))?,
+                None => &self.white,
+            };
+            let start = vertices.len() as u32;
+            let clip_from_model = view_projection * mesh.transform;
+            vertices.extend(mesh.triangles.as_flattened().iter().map(
+                |&[x, y, z, r, g, b, u, v]| {
+                    let [cx, cy, cz, cw] = (clip_from_model * Vec4::new(x, y, z, 1.0)).to_array();
+                    [cx, cy, cz, cw, r, g, b, u, v]
+                },
+            ));
+            draws.push((start..vertices.len() as u32, texture));
+        }
+        let start = vertices.len() as u32;
+        vertices.extend(labels);
+        draws.push((start..vertices.len() as u32, &self.white));
         let vertex_bytes: Vec<u8> = vertices
             .iter()
             .flatten()
@@ -229,7 +283,12 @@ impl Renderer {
             if !vertices.is_empty() {
                 pass.set_pipeline(&self.pipeline);
                 pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                pass.draw(0..vertices.len() as u32, 0..1);
+                for (range, texture) in draws {
+                    if !range.is_empty() {
+                        pass.set_bind_group(0, texture, &[]);
+                        pass.draw(range, 0..1);
+                    }
+                }
             }
         }
         self.queue.submit([encoder.finish()]);
@@ -245,14 +304,24 @@ impl Renderer {
     }
 }
 
-fn triangle_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::RenderPipeline {
+fn triangle_pipeline(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    texture_layout: &wgpu::BindGroupLayout,
+) -> wgpu::RenderPipeline {
+    // An explicit layout keeps texture bind groups valid when the pipeline is rebuilt.
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("triangle layout"),
+        bind_group_layouts: &[Some(texture_layout)],
+        immediate_size: 0,
+    });
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("triangle shader"),
         source: wgpu::ShaderSource::Wgsl(include_str!("triangle.wgsl").into()),
     });
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("triangle pipeline"),
-        layout: None,
+        layout: Some(&layout),
         vertex: wgpu::VertexState {
             module: &shader,
             entry_point: Some("vs_main"),
@@ -260,7 +329,7 @@ fn triangle_pipeline(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu
             buffers: &[Some(wgpu::VertexBufferLayout {
                 array_stride: size_of::<Vertex>() as wgpu::BufferAddress,
                 step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x3],
+                attributes: &wgpu::vertex_attr_array![0 => Float32x4, 1 => Float32x3, 2 => Float32x2],
             })],
         },
         fragment: Some(wgpu::FragmentState {

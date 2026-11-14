@@ -123,11 +123,15 @@ impl ApplicationHandler<RendererReady> for WindowHandler {
                 let window = Arc::new(window);
                 self.window = Some(window.clone());
                 #[cfg(not(target_arch = "wasm32"))]
-                self.user_event(event_loop, pollster::block_on(Renderer::new(window)));
+                self.user_event(
+                    event_loop,
+                    pollster::block_on(Renderer::new(window, &self.scene.textures)),
+                );
                 #[cfg(target_arch = "wasm32")]
                 if let Some(proxy) = self.proxy.clone() {
+                    let textures = self.scene.textures.clone();
                     wasm_bindgen_futures::spawn_local(async move {
-                        let result = Renderer::new(window).await;
+                        let result = Renderer::new(window, &textures).await;
                         let _ = proxy.send_event(result);
                     });
                 }
