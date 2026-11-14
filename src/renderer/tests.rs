@@ -1,4 +1,7 @@
-use super::{text::label_vertices, texture::decode_png};
+use glam::{Mat4, Vec3};
+
+use super::{gpu::mesh_vertices, text::label_vertices, texture::decode_png};
+use crate::scene::{DirectionalLight, Mesh};
 
 #[test]
 fn right_aligns_label_pixels_in_top_right_corner() {
@@ -51,4 +54,43 @@ fn decodes_png_color_types_to_rgba() {
 fn rejects_git_lfs_pointer_instead_of_png() {
     let pointer = b"version https://git-lfs.github.com/spec/v1\noid sha256:0\nsize 1\n";
     assert!(decode_png(pointer).is_err());
+}
+
+#[test]
+fn lights_each_triangle_by_its_world_space_normal() {
+    // A counter-clockwise triangle in the plane x + z = 0, facing (1, 0, 1), colored (1, 0.5, 0.25).
+    let mesh = |transform| Mesh {
+        triangles: vec![
+            [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 1.0]]
+                .map(|[x, y, z]| [x, y, z, 1.0, 0.5, 0.25, 0.0, 0.0]),
+        ],
+        transform,
+        texture: None,
+    };
+    let light = DirectionalLight {
+        direction: Vec3::new(0.0, 0.0, -3.0),
+        color: Vec3::new(0.4, 0.8, 0.8),
+        ambient: Vec3::splat(0.1),
+    };
+    let lit = |transform| {
+        let vertices: Vec<_> = mesh_vertices(&mesh(transform), Mat4::IDENTITY, light).collect();
+        assert_eq!(vertices.len(), 3);
+        assert!(vertices.iter().all(|v| v[4..7] == vertices[0][4..7]));
+        Vec3::from_slice(&vertices[0][4..7])
+    };
+    // Facing the rays at 45°: ambient plus cos 45° of the direct light, times the vertex color.
+    let facing = Vec3::splat(0.1) + Vec3::new(0.4, 0.8, 0.8) * std::f32::consts::FRAC_1_SQRT_2;
+    let expected = facing * Vec3::new(1.0, 0.5, 0.25);
+    assert!(lit(Mat4::IDENTITY).abs_diff_eq(expected, 1e-6));
+    // Turned away from the rays: ambient only.
+    let away = lit(Mat4::from_rotation_y(std::f32::consts::PI));
+    assert!(
+        away.abs_diff_eq(Vec3::new(0.1, 0.05, 0.025), 1e-6),
+        "{away}"
+    );
+    // Stretching X tilts the surface toward the rays: its normal becomes (1/2, 0, 1), not (2, 0, 1).
+    let stretched = lit(Mat4::from_scale(Vec3::new(2.0, 1.0, 1.0)));
+    let facing = Vec3::splat(0.1) + Vec3::new(0.4, 0.8, 0.8) * (1.0 / 1.25f32.sqrt());
+    let expected = facing * Vec3::new(1.0, 0.5, 0.25);
+    assert!(stretched.abs_diff_eq(expected, 1e-6), "{stretched}");
 }

@@ -16,6 +16,8 @@ pub struct Scene {
     pub camera: OrbitCamera,
     /// PNG images that meshes sample by index. The renderer reads them once at startup.
     pub textures: Vec<&'static [u8]>,
+    /// Lights the meshes; the debug labels are unlit.
+    pub light: DirectionalLight,
     /// Shapes drawn with a depth test. Each frame, `Scene::animate` replaces the first one's
     /// `transform` with a rotation about +Y.
     pub meshes: Vec<Mesh>,
@@ -36,6 +38,26 @@ pub struct Mesh {
     /// Index into `Scene::textures`. Its colors, decoded from sRGB, multiply the vertex colors;
     /// `None` draws the vertex colors alone. Texture alpha is ignored.
     pub texture: Option<usize>,
+}
+
+/// Light whose parallel rays reach the whole scene from one direction, like sunlight.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DirectionalLight {
+    /// World-space direction the rays travel, of any nonzero length.
+    pub direction: Vec3,
+    /// Linear RGB light received by a surface facing the rays head-on.
+    pub color: Vec3,
+    /// Linear RGB light every surface receives, so faces turned away are not black.
+    pub ambient: Vec3,
+}
+
+impl DirectionalLight {
+    /// Light reaching a surface whose unit `normal` points out of its front: the ambient light plus
+    /// the direct light scaled by how squarely the surface faces the rays (Lambert diffuse).
+    pub(crate) fn shade(&self, normal: Vec3) -> Vec3 {
+        let facing = normal.dot(-self.direction.normalize_or_zero()).max(0.0);
+        self.ambient + self.color * facing
+    }
 }
 
 impl Scene {
@@ -111,6 +133,13 @@ impl Default for Scene {
             },
             camera: OrbitCamera::default(),
             textures: vec![include_bytes!("dice.png")],
+            // From above, in front, and to the right of the starting camera, so the cube's top is
+            // brightest, then its front, then its right side.
+            light: DirectionalLight {
+                direction: Vec3::new(-0.4, -1.0, -0.7),
+                color: Vec3::splat(0.8),
+                ambient: Vec3::splat(0.2),
+            },
             meshes: vec![Mesh {
                 triangles: cube(),
                 transform: Mat4::IDENTITY,
