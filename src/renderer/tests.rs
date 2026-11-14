@@ -57,12 +57,12 @@ fn rejects_git_lfs_pointer_instead_of_png() {
 }
 
 #[test]
-fn lights_each_triangle_by_its_world_space_normal() {
-    // A counter-clockwise triangle in the plane x + z = 0, facing (1, 0, 1), colored (1, 0.5, 0.25).
+fn lights_each_vertex_by_its_world_space_normal() {
+    // A triangle colored (1, 0.5, 0.25) whose vertex normals all point along (1, 0, 1), unnormalized.
     let mesh = |transform| Mesh {
         triangles: vec![
             [[0.0, 0.0, 0.0], [0.0, 1.0, 0.0], [-1.0, 0.0, 1.0]]
-                .map(|[x, y, z]| [x, y, z, 1.0, 0.5, 0.25, 0.0, 0.0]),
+                .map(|[x, y, z]| [x, y, z, 1.0, 0.5, 0.25, 0.0, 0.0, 2.0, 0.0, 2.0]),
         ],
         transform,
         texture: None,
@@ -94,4 +94,15 @@ fn lights_each_triangle_by_its_world_space_normal() {
     let facing = Vec3::splat(0.1) + Vec3::new(0.4, 0.8, 0.8) * (1.0 / 1.25f32.sqrt());
     let expected = facing * Vec3::new(1.0, 0.5, 0.25);
     assert!(stretched.abs_diff_eq(expected, 1e-6), "{stretched}");
+
+    // Smooth shading: each vertex is lit along its own normal, here toward and away from the rays.
+    let mut smooth = mesh(Mat4::IDENTITY);
+    smooth.triangles[0][1][8..].copy_from_slice(&[0.0, 0.0, -1.0]);
+    let vertices: Vec<_> = mesh_vertices(&smooth, Mat4::IDENTITY, light).collect();
+    let colors: Vec<Vec3> = vertices
+        .iter()
+        .map(|v| Vec3::from_slice(&v[4..7]))
+        .collect();
+    assert!(colors[0].abs_diff_eq(lit(Mat4::IDENTITY), 1e-6));
+    assert!(colors[1].abs_diff_eq(Vec3::new(0.1, 0.05, 0.025), 1e-6));
 }
