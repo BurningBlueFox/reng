@@ -285,6 +285,9 @@ impl Renderer {
             }
         }
         self.queue.submit([encoder.finish()]);
+        // Free once the GPU is done: the web backend otherwise holds every frame's vertex buffer
+        // until garbage collection, hundreds of megabytes at this scene's size.
+        vertex_buffer.destroy();
         self.window.pre_present_notify();
         self.queue.present(frame);
         tracing::debug!("Frame presented");
