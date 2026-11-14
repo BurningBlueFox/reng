@@ -82,8 +82,9 @@ fn lights_each_triangle_by_its_world_space_normal() {
     let facing = Vec3::splat(0.1) + Vec3::new(0.4, 0.8, 0.8) * std::f32::consts::FRAC_1_SQRT_2;
     let expected = facing * Vec3::new(1.0, 0.5, 0.25);
     assert!(lit(Mat4::IDENTITY).abs_diff_eq(expected, 1e-6));
-    // Turned away from the rays: ambient only.
-    let away = lit(Mat4::from_rotation_y(std::f32::consts::PI));
+    // A quarter turn faces it (1, 0, -1), away from the rays: ambient only. Unlike a half turn, this
+    // rotation is not symmetric, so it also catches a normal matrix that skips the transpose.
+    let away = lit(Mat4::from_rotation_y(std::f32::consts::FRAC_PI_2));
     assert!(
         away.abs_diff_eq(Vec3::new(0.1, 0.05, 0.025), 1e-6),
         "{away}"

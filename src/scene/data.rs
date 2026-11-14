@@ -133,8 +133,8 @@ impl Default for Scene {
             },
             camera: OrbitCamera::default(),
             textures: vec![include_bytes!("dice.png")],
-            // From above, in front, and to the right of the starting camera, so the cube's top is
-            // brightest, then its front, then its right side.
+            // From the +X, +Y, and +Z side, above and just behind the starting camera, so the cube's
+            // top is brightest, then its +Z face, then its +X face.
             light: DirectionalLight {
                 direction: Vec3::new(-0.4, -1.0, -0.7),
                 color: Vec3::splat(0.8),
