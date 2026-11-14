@@ -297,10 +297,9 @@ impl Renderer {
     }
 }
 
-/// Clip-space vertices of `mesh` with its colors lit by `light`.
-// ponytail: one normal per triangle from its winding, lit per vertex on the CPU; exact for flat faces
-// under a directional light. Add vertex normals and per-fragment shading for smooth meshes or
-// point lights.
+/// Clip-space vertices of `mesh` with each vertex color lit by `light` along the vertex normal.
+// ponytail: lit per vertex on the CPU and interpolated across each triangle (Gouraud shading);
+// light per fragment when point lights or specular highlights need detail inside triangles.
 pub(super) fn mesh_vertices(
     mesh: &Mesh,
     view_projection: Mat4,
@@ -310,17 +309,15 @@ pub(super) fn mesh_vertices(
     let clip_from_model = view_projection * mesh.transform;
     // The inverse transpose keeps normals perpendicular to surfaces under non-uniform scale.
     let normal_from_model = Mat3::from_mat4(mesh.transform).inverse().transpose();
-    mesh.triangles.iter().flat_map(move |triangle| {
-        let [p0, p1, p2] = triangle.map(|vertex| Vec3::from_slice(&vertex));
-        // Front faces wind counter-clockwise, so this cross product points out of the front.
-        let normal = (normal_from_model * (p1 - p0).cross(p2 - p0)).normalize_or_zero();
-        let received = light.shade(normal);
-        triangle.map(|[x, y, z, r, g, b, u, v]| {
+    mesh.triangles
+        .as_flattened()
+        .iter()
+        .map(move |&[x, y, z, r, g, b, u, v, nx, ny, nz]| {
             let [cx, cy, cz, cw] = (clip_from_model * Vec4::new(x, y, z, 1.0)).to_array();
-            let [r, g, b] = (Vec3::new(r, g, b) * received).to_array();
+            let normal = (normal_from_model * Vec3::new(nx, ny, nz)).normalize_or_zero();
+            let [r, g, b] = (Vec3::new(r, g, b) * light.shade(normal)).to_array();
             [cx, cy, cz, cw, r, g, b, u, v]
         })
-    })
 }
 
 fn triangle_pipeline(

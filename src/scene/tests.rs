@@ -3,7 +3,7 @@ use std::{f32::consts::FRAC_PI_2, time::Duration};
 use glam::{Mat4, Vec2, Vec3};
 use web_time::Instant;
 
-use super::{FrameClock, Mesh, OrbitCamera, Scene};
+use super::{FrameClock, OrbitCamera, Scene, suzanne::suzanne_geometry};
 
 #[test]
 fn reports_frame_and_elapsed_time() {
@@ -86,15 +86,19 @@ fn projection_keeps_square_pixels_and_webgpu_depth() {
 #[test]
 fn animate_turns_only_the_first_mesh_about_y() {
     let mut scene = Scene::default();
-    scene.meshes.push(Mesh {
-        triangles: Vec::new(),
-        transform: Mat4::from_translation(Vec3::X),
-        texture: None,
-    });
+    let others: Vec<Mat4> = scene.meshes[1..]
+        .iter()
+        .map(|mesh| mesh.transform)
+        .collect();
+    assert!(!others.is_empty());
     scene.animate(Duration::from_secs_f64(std::f64::consts::FRAC_PI_2));
     let turned = scene.meshes[0].transform.transform_point3(Vec3::X);
     assert!(turned.abs_diff_eq(Vec3::NEG_Z, 1e-6), "{turned}");
-    assert_eq!(scene.meshes[1].transform, Mat4::from_translation(Vec3::X));
+    let after: Vec<Mat4> = scene.meshes[1..]
+        .iter()
+        .map(|mesh| mesh.transform)
+        .collect();
+    assert_eq!(after, others);
 }
 
 #[test]
@@ -193,4 +197,91 @@ fn cube_faces_map_to_dice_cells_with_opposites_adding_to_seven() {
             .1;
         assert_eq!(pips + opposite, 7, "faces {normal} and {}", -normal);
     }
+}
+
+/// Signed volume enclosed by `triangles`; positive when their fronts face outward.
+fn signed_volume(triangles: &[[[f32; 11]; 3]]) -> f32 {
+    triangles
+        .iter()
+        .map(|triangle| {
+            let [a, b, c] = triangle.map(|v| Vec3::from_slice(&v));
+            a.dot(b.cross(c)) / 6.0
+        })
+        .sum()
+}
+
+#[test]
+fn default_meshes_have_no_degenerate_triangles_and_the_convex_ones_face_their_normals() {
+    for (index, mesh) in Scene::default().meshes.iter().enumerate() {
+        for triangle in &mesh.triangles {
+            let [a, b, c] = triangle.map(|v| Vec3::from_slice(&v));
+            let winding = (b - a).cross(c - a);
+            assert!(
+                winding.length() > 1e-6,
+                "mesh {index}: degenerate {triangle:?}"
+            );
+            // Suzanne's smooth normals bend away from some faces at the folds around its eyes, so
+            // `suzanne_matches_blenders_monkey` checks its orientation by volume instead.
+            if index == 2 {
+                continue;
+            }
+            for vertex in triangle {
+                let normal = Vec3::from_slice(&vertex[8..]);
+                assert!(
+                    winding.dot(normal) > 0.0,
+                    "mesh {index}: normal {normal} opposes winding {winding}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn sphere_is_closed_and_smooth() {
+    let sphere = &Scene::default().meshes[1].triangles;
+    assert_eq!(sphere.len(), 48 * (2 * 24 - 2));
+    for vertex in sphere.as_flattened() {
+        let (position, normal) = (Vec3::from_slice(vertex), Vec3::from_slice(&vertex[8..]));
+        assert!((position.length() - 1.0).abs() < 1e-6);
+        assert!(normal.abs_diff_eq(position, 1e-6));
+    }
+    // A closed, outward-facing unit sphere encloses nearly 4π/3.
+    let volume = signed_volume(sphere);
+    assert!(
+        (volume / (4.0 * std::f32::consts::PI / 3.0) - 1.0).abs() < 0.01,
+        "{volume}"
+    );
+}
+
+#[test]
+fn suzanne_matches_blenders_monkey() {
+    let (positions, triangles) = suzanne_geometry();
+    // Blender's monkey primitive: 507 vertices and 500 faces, 468 of them quads.
+    assert_eq!((positions.len(), triangles.len()), (507, 968));
+    let (min, max) = positions
+        .iter()
+        .fold((Vec3::MAX, Vec3::MIN), |(min, max), &p| {
+            (min.min(p), max.max(p))
+        });
+    // Ear tip to ear tip along X, symmetric about x = 0; facing +Z with +Y up.
+    assert!(
+        min.abs_diff_eq(Vec3::new(-1.3671875, -0.984375, -0.8515625), 1e-6),
+        "{min}"
+    );
+    assert!(
+        max.abs_diff_eq(Vec3::new(1.3671875, 0.984375, 0.8515625), 1e-6),
+        "{max}"
+    );
+    let mut used = vec![false; positions.len()];
+    for &index in triangles.as_flattened() {
+        used[index] = true;
+    }
+    assert!(
+        used.iter().all(|&used| used),
+        "every vertex belongs to a face"
+    );
+    // The open head still encloses a positive volume when its faces point outward.
+    let mesh = &Scene::default().meshes[2].triangles;
+    assert_eq!(mesh.len(), 968);
+    assert!(signed_volume(mesh) > 0.5, "{}", signed_volume(mesh));
 }

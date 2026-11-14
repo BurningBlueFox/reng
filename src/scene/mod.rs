@@ -1,6 +1,7 @@
 mod camera;
 mod clock;
 mod data;
+mod suzanne;
 
 pub use camera::OrbitCamera;
 pub use clock::FrameClock;
