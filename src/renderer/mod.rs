@@ -1,5 +1,6 @@
 mod gpu;
 mod text;
+mod texture;
 
 pub(crate) use gpu::Renderer;
 

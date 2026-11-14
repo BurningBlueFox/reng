@@ -1,6 +1,6 @@
 use std::{f32::consts::FRAC_PI_2, time::Duration};
 
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Vec2, Vec3};
 use web_time::Instant;
 
 use super::{FrameClock, Mesh, OrbitCamera, Scene};
@@ -89,6 +89,7 @@ fn animate_turns_only_the_first_mesh_about_y() {
     scene.meshes.push(Mesh {
         triangles: Vec::new(),
         transform: Mat4::from_translation(Vec3::X),
+        texture: None,
     });
     scene.animate(Duration::from_secs_f64(std::f64::consts::FRAC_PI_2));
     let turned = scene.meshes[0].transform.transform_point3(Vec3::X);
@@ -152,4 +153,44 @@ fn camera_pan_moves_the_way_it_faces() {
             1e-5
         )
     );
+}
+
+#[test]
+fn cube_faces_map_to_dice_cells_with_opposites_adding_to_seven() {
+    let mesh = &Scene::default().meshes[0];
+    assert_eq!(mesh.texture, Some(0));
+    let mut pips_by_normal = Vec::new();
+    for face in mesh.triangles.chunks(2) {
+        let [a, b, c] = face[0].map(|v| Vec3::from_slice(&v));
+        let normal = (b - a).cross(c - a).normalize().round();
+        let vertices = face.as_flattened();
+        let (min, max) = vertices.iter().fold(
+            (Vec2::splat(f32::MAX), Vec2::splat(f32::MIN)),
+            |(min, max), v| {
+                (
+                    min.min(Vec2::new(v[6], v[7])),
+                    max.max(Vec2::new(v[6], v[7])),
+                )
+            },
+        );
+        // Each face covers exactly one cell of the 3×2 atlas.
+        assert!(
+            (max - min).abs_diff_eq(Vec2::new(1.0 / 3.0, 0.5), 1e-6),
+            "{min} {max}"
+        );
+        let cell = min * Vec2::new(3.0, 2.0);
+        let pips = cell.y.round() as u32 * 3 + cell.x.round() as u32 + 1;
+        pips_by_normal.push((normal, pips));
+    }
+    let mut all: Vec<u32> = pips_by_normal.iter().map(|&(_, pips)| pips).collect();
+    all.sort();
+    assert_eq!(all, [1, 2, 3, 4, 5, 6]);
+    for &(normal, pips) in &pips_by_normal {
+        let opposite = pips_by_normal
+            .iter()
+            .find(|(n, _)| *n == -normal)
+            .unwrap()
+            .1;
+        assert_eq!(pips + opposite, 7, "faces {normal} and {}", -normal);
+    }
 }

@@ -1,6 +1,6 @@
 use std::{f64::consts::TAU, time::Duration};
 
-use glam::{Mat4, Vec3, camera::rh::proj::directx};
+use glam::{Mat4, Vec2, Vec3, camera::rh::proj::directx};
 
 use super::OrbitCamera;
 
@@ -14,6 +14,8 @@ pub struct Scene {
     pub background: wgpu::Color,
     /// Where the scene is seen from. Window input moves it.
     pub camera: OrbitCamera,
+    /// PNG images that meshes sample by index. The renderer reads them once at startup.
+    pub textures: Vec<&'static [u8]>,
     /// Shapes drawn with a depth test. Each frame, `Scene::animate` replaces the first one's
     /// `transform` with a rotation about +Y.
     pub meshes: Vec<Mesh>,
@@ -24,12 +26,16 @@ pub struct Scene {
 /// A shape drawn as a list of triangles.
 // ponytail: non-indexed; add an index buffer when meshes share many vertices.
 pub struct Mesh {
-    /// Three vertices per triangle, each a model-space XYZ position followed by a linear RGB
-    /// color. Wind front faces counter-clockwise seen from outside; both sides are drawn until
-    /// back-face culling is enabled.
-    pub triangles: Vec<[[f32; 6]; 3]>,
+    /// Three vertices per triangle, each a model-space XYZ position, a linear RGB color, and a
+    /// UV texture coordinate, with (0, 0) at the texture's top-left and (1, 1) at its
+    /// bottom-right. Wind front faces counter-clockwise seen from outside; both sides are drawn
+    /// until back-face culling is enabled.
+    pub triangles: Vec<[[f32; 8]; 3]>,
     /// Model-to-world transform.
     pub transform: Mat4,
+    /// Index into `Scene::textures`. Its colors, decoded from sRGB, multiply the vertex colors;
+    /// `None` draws the vertex colors alone. Texture alpha is ignored.
+    pub texture: Option<usize>,
 }
 
 impl Scene {
@@ -53,15 +59,17 @@ impl Scene {
 
 /// Unit cube centered on the origin, two counter-clockwise triangles per face.
 /// The +X/+Y/+Z faces are red/green/blue; -X/-Y/-Z are cyan/magenta/yellow.
-fn cube() -> Vec<[[f32; 6]; 3]> {
+/// UVs map +X/+Y/+Z to the 1/2/3 cells of a 3×2 dice atlas (`dice.png`) and -X/-Y/-Z to the
+/// 6/5/4 cells, so opposite faces add up to seven.
+fn cube() -> Vec<[[f32; 8]; 3]> {
     let mut triangles = Vec::with_capacity(12);
-    for normal in [
-        Vec3::X,
-        Vec3::NEG_X,
-        Vec3::Y,
-        Vec3::NEG_Y,
-        Vec3::Z,
-        Vec3::NEG_Z,
+    for (normal, pips) in [
+        (Vec3::X, 1),
+        (Vec3::NEG_X, 6),
+        (Vec3::Y, 2),
+        (Vec3::NEG_Y, 5),
+        (Vec3::Z, 3),
+        (Vec3::NEG_Z, 4),
     ] {
         // u is perpendicular to the normal and v = normal × u, so u × v points outward.
         let u = Vec3::new(normal.z, normal.x, normal.y) * 0.5;
@@ -73,6 +81,10 @@ fn cube() -> Vec<[[f32; 6]; 3]> {
             center + u + v,
             center - u + v,
         ];
+        // The atlas cell's corners, in the same order: bottom-left, bottom-right, top-right, top-left.
+        let cell = Vec2::new(((pips - 1) % 3) as f32, ((pips - 1) / 3) as f32);
+        let uvs = [(0.0, 1.0), (1.0, 1.0), (1.0, 0.0), (0.0, 0.0)]
+            .map(|(u, v)| (cell + Vec2::new(u, v)) / Vec2::new(3.0, 2.0));
         let color = if normal.element_sum() > 0.0 {
             normal
         } else {
@@ -80,8 +92,8 @@ fn cube() -> Vec<[[f32; 6]; 3]> {
         };
         for triangle in [[0, 1, 2], [0, 2, 3]] {
             triangles.push(triangle.map(|i| {
-                let p = corners[i];
-                [p.x, p.y, p.z, color.x, color.y, color.z]
+                let (p, uv) = (corners[i], uvs[i]);
+                [p.x, p.y, p.z, color.x, color.y, color.z, uv.x, uv.y]
             }));
         }
     }
@@ -98,9 +110,11 @@ impl Default for Scene {
                 a: 1.0,
             },
             camera: OrbitCamera::default(),
+            textures: vec![include_bytes!("dice.png")],
             meshes: vec![Mesh {
                 triangles: cube(),
                 transform: Mat4::IDENTITY,
+                texture: Some(0),
             }],
             debug_labels: Vec::new(),
         }

@@ -65,7 +65,7 @@ fn glyph(c: char) -> [u8; 7] {
     }
 }
 
-/// Builds white clip-space XYZW triangles for `lines`, right-aligned in the top-right corner of a
+/// Builds white clip-space XYZW triangles for `lines`, with UV (0, 0), right-aligned in the top-right corner of a
 /// `width`×`height` surface. They sit at depth 0, so they pass the depth test over every mesh.
 /// `pixel` is the size of one glyph pixel in physical pixels.
 // ponytail: one quad per glyph pixel; switch to a glyph atlas when labels grow beyond debug text.
@@ -95,6 +95,8 @@ pub(super) fn label_vertices(lines: &[String], width: f32, height: f32, pixel: f
                             1.0,
                             1.0,
                             1.0,
+                            0.0,
+                            0.0,
                         ]
                     };
                     vertices.extend([
