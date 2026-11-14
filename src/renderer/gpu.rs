@@ -3,13 +3,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use glam::Vec4;
+use glam::{Mat3, Mat4, Vec3, Vec4};
 use tracing::Instrument;
 use wgpu::util::DeviceExt;
 use winit::{dpi::PhysicalSize, window::Window};
 
 use super::{text::label_vertices, texture};
-use crate::scene::Scene;
+use crate::scene::{DirectionalLight, Mesh, Scene};
 
 pub(super) type RenderResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
@@ -213,7 +213,6 @@ impl Renderer {
         let labels = label_vertices(&scene.debug_labels, width, height, pixel);
         // Nonzero: zero-size surfaces returned above.
         let view_projection = scene.view_projection(width / height);
-        // Keep clip-space w so the GPU clips at the near plane and interpolates perspective-correctly.
         // ponytail: transforms every vertex on the CPU and uploads a new buffer each frame; move
         // matrices to a uniform buffer with static per-mesh vertex buffers when meshes grow large.
         let mut vertices: Vec<Vertex> = Vec::new();
@@ -228,13 +227,7 @@ impl Renderer {
                 None => &self.white,
             };
             let start = vertices.len() as u32;
-            let clip_from_model = view_projection * mesh.transform;
-            vertices.extend(mesh.triangles.as_flattened().iter().map(
-                |&[x, y, z, r, g, b, u, v]| {
-                    let [cx, cy, cz, cw] = (clip_from_model * Vec4::new(x, y, z, 1.0)).to_array();
-                    [cx, cy, cz, cw, r, g, b, u, v]
-                },
-            ));
+            vertices.extend(mesh_vertices(mesh, view_projection, scene.light));
             draws.push((start..vertices.len() as u32, texture));
         }
         let start = vertices.len() as u32;
@@ -302,6 +295,32 @@ impl Renderer {
         self.window.request_redraw();
         Ok(())
     }
+}
+
+/// Clip-space vertices of `mesh` with its colors lit by `light`.
+// ponytail: one normal per triangle from its winding, lit per vertex on the CPU; exact for flat faces
+// under a directional light. Add vertex normals and per-fragment shading for smooth meshes or
+// point lights.
+pub(super) fn mesh_vertices(
+    mesh: &Mesh,
+    view_projection: Mat4,
+    light: DirectionalLight,
+) -> impl Iterator<Item = Vertex> + '_ {
+    // Keep clip-space w so the GPU clips at the near plane and interpolates perspective-correctly.
+    let clip_from_model = view_projection * mesh.transform;
+    // The inverse transpose keeps normals perpendicular to surfaces under non-uniform scale.
+    let normal_from_model = Mat3::from_mat4(mesh.transform).inverse().transpose();
+    mesh.triangles.iter().flat_map(move |triangle| {
+        let [p0, p1, p2] = triangle.map(|vertex| Vec3::from_slice(&vertex));
+        // Front faces wind counter-clockwise, so this cross product points out of the front.
+        let normal = (normal_from_model * (p1 - p0).cross(p2 - p0)).normalize_or_zero();
+        let received = light.shade(normal);
+        triangle.map(|[x, y, z, r, g, b, u, v]| {
+            let [cx, cy, cz, cw] = (clip_from_model * Vec4::new(x, y, z, 1.0)).to_array();
+            let [r, g, b] = (Vec3::new(r, g, b) * received).to_array();
+            [cx, cy, cz, cw, r, g, b, u, v]
+        })
+    })
 }
 
 fn triangle_pipeline(
